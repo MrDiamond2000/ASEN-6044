@@ -10,6 +10,8 @@ set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
 set(INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+find_package(Eigen3 REQUIRED)
+
 file(
 	GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
 	"${SRC_DIR}/*.cpp"
@@ -26,6 +28,8 @@ else()
 		PRIVATE
 			${INCLUDE_DIR}
 	)
+
+    target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
 
 	if(MSVC)
 		target_compile_options(${PROJECT_NAME} PRIVATE /W4)
