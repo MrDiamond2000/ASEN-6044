@@ -39,3 +39,23 @@
 
 # debug information files
 *.dwo
+
+
+# Build directories
+build/
+cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# macOS noise
+.DS_Store
+
+# Editor/IDE metadata
+.vscode/
+.idea/
