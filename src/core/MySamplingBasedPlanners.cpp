@@ -142,6 +142,7 @@ path_planning::Path2D MyRRT::plan(Eigen::Vector2d init_, Eigen::Vector2d goal_) 
     path.waypoints = ori_path.getWaypoints2D();
     // path.waypoints.push_back(problem_.q_init);
     // path.waypoints.push_back(problem_.q_goal);
+    path.valid = ori_path.valid;
     return path;
 }
 

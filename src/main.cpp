@@ -14,5 +14,18 @@ int main(){
 
     // test collision checker
     Point2DCollisionChecker collision_checker(env);
-    LOG(collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+    LOG("Is (3, 3.5) in collsion: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+
+
+    // test path planner
+    MyRRT rrt(0.05, 1000, 0.5);
+    rrt.set_environment(env);
+    path_planning::Path2D path_output = rrt.plan(Eigen::Vector2d(1,1), Eigen::Vector2d(5,5));
+
+    LOG("Path valid: " << path_output.valid);
+    if (path_output.valid){
+        for (size_t i = 0; i < path_output.waypoints.size(); i++){
+            LOG(path_output.waypoints[i].transpose());
+        }
+    }
 }

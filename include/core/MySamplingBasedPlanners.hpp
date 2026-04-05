@@ -36,11 +36,19 @@ class MyGenericRRT {
         double step_size;
 };
 
+/// @brief Create RRT Object
+/// @param bias_ bias toward goal
+/// @param iteration_ maximum iteration
+/// @param step_size_ step size
 class MyRRT : public MyGenericRRT {
     public:
         MyRRT(double bias_, int iteration_, double step_size_) : MyGenericRRT(bias_, iteration_, step_size_) {}
         void set_environment(path_planning::Environment2D environment_) {environment = environment_;}
 
+        /// @brief Plan path using rrt
+        /// @param init_ initial location
+        /// @param goal_ foal location
+        /// @return a Path2D object that contain valid path
         path_planning::Path2D plan(Eigen::Vector2d init_, Eigen::Vector2d goal_); 
         std::map<path_planning::Node, Eigen::Vector2d> getNodes2D();
 
