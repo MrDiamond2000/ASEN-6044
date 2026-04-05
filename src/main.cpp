@@ -14,7 +14,7 @@ int main(){
 
     // test collision checker
     Point2DCollisionChecker collision_checker(env);
-    LOG("Is (3, 3.5) in collsion" << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+    LOG("Is (3, 3.5) in collsion: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
 
 
     // test path planner
