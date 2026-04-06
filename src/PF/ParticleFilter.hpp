@@ -10,7 +10,18 @@
 
 class ParticleFilter {
     public:
-        ParticleFilter(int Ns_, int maxX_, int maxY_, int gridSizeX_, int gridSizeY_): Ns(Ns_), maxX(maxX_), maxY(maxY_), gridSizeX(gridSizeX_), gridSizeY(gridSizeY_), gen(std::random_device{}()), angleDist(0, 2*M_PI), distX(0.0, maxX), distY(0.0, maxY), maxPropogationAttempts(20), maxObservedScore(10), observedDecayRate(0.995) {
+        ParticleFilter(int Ns_, int maxX_, int maxY_, int gridSizeX_, int gridSizeY_)
+        :   Ns(Ns_), 
+            gen(std::random_device{}()), 
+            angleDist(0, 2*M_PI), 
+            gridSizeX(gridSizeX_), 
+            gridSizeY(gridSizeY_), 
+            maxPropogationAttempts(20), 
+            maxObservedScore(10), 
+            observedDecayRate(0.995), 
+            maxX(maxX_), maxY(maxY_), 
+            distX(0.0, maxX), 
+            distY(0.0, maxY) {
             observedGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
         }
 
