@@ -11,6 +11,7 @@ set(INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 file(
 	GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
@@ -30,6 +31,7 @@ else()
 	)
 
     target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
+	target_link_libraries(${PROJECT_NAME} yaml-cpp::yaml-cpp)
 
 	if(MSVC)
 		target_compile_options(${PROJECT_NAME} PRIVATE /W4)
