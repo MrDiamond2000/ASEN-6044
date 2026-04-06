@@ -10,7 +10,7 @@ pathPlanner:
 particleFilter:
   Ns: 1000
   stepSize: 0.1
-  resampleThreshold: 0.1
+  resampleThreshold: 0.5
   gridSizeX: 50
   gridSizeY: 50
   maxPropogationAttempts: 20
