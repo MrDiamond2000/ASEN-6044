@@ -80,7 +80,7 @@ struct AdjacencyList {
         return nodes.size();
     }
     std::size_t disconnect(NATIVE_NODE_T dst_node) {
-        auto removeConnection = [dst_node] (NATIVE_NODE_T n, const EDGE_T& e) -> bool {
+        auto removeConnection = [dst_node] (NATIVE_NODE_T n, const EDGE_T&) -> bool {
             return n == dst_node;
         };
         return disconnectIf(removeConnection);
