@@ -3,6 +3,7 @@
 #include "PF/ParticleFilter.hpp"
 #include <fstream>
 #include <yaml-cpp/yaml.h>
+#include "tools/Logging.hpp"
 
 int main(){
     // build environment
@@ -17,7 +18,7 @@ int main(){
 
     // test collision checker
     Point2DCollisionChecker collision_checker(env);
-    LOG("Is (3, 3.5) in collision: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+    // LOG("Is (3, 3.5) in collision: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
 
     // load in parameters from the parameter yaml file
     YAML::Node config = YAML::LoadFile("src/PF/ParticleFilterParams.yaml");
@@ -88,10 +89,20 @@ int main(){
     // run particle filter iterations and save data to a csv
     bool found = false;
     double currentHeading = vehicleInitialHeading;
+
+    size_t pathCounter; // initialize to be greater than 10 to ensure a path is planned at the first iteration
+    path_planning::Path2D path;
+
+    LOG("Starting particle filter iterations...");
     for (int i = 0; i < maxIterations; i++) {
 
         // calculate the vehicle heading
-        direction = estimate - vehicle;
+        if(path.valid && pathCounter+2 < path.waypoints.size()){
+            direction = path.waypoints[pathCounter+2] - vehicle;
+        }
+        else{
+            direction = estimate - vehicle;
+        }
 
         if (direction.norm() > 1e-6) {
             direction.normalize();
@@ -124,20 +135,26 @@ int main(){
         }
 
         // plan a path towards the filter estimate
-        path_planning::Path2D path = rrt.plan(vehicle, estimate);
-
-        if (path.valid && path.waypoints.size() > 1) {
-            // move one step along the path, but normalize to the step size (velocity) of the vehicle to ensure consistency
-            Eigen::Vector2d next = path.waypoints[1];
-            Eigen::Vector2d delta = next - vehicle;
-
-            if (delta.norm() > stepSize) {
-                delta.normalize();
-                delta *= stepSize;
-            }
-
-            vehicle += delta;
+        if (!path.valid || pathCounter > 8 || pathCounter+2 < path.waypoints.size()) {
+            path = rrt.plan(vehicle, estimate);
+            pathCounter = 0;
         }
+        else {
+            pathCounter++;
+        }
+
+        // // move one step along the path, but normalize to the step size (velocity) of the vehicle to ensure consistency
+        // Eigen::Vector2d next = path.waypoints[1];
+        // Eigen::Vector2d delta = next - vehicle;
+
+        // if (delta.norm() > stepSize) {
+        //     delta.normalize();
+        //     delta *= stepSize;
+        // }
+
+        // vehicle += delta;
+
+        vehicle = path.waypoints[pathCounter+1];
 
         // propogate the target position for the next iteration
         pf.propagate(target, collision_checker, stepSize);

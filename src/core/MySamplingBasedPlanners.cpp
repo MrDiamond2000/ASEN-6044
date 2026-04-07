@@ -9,7 +9,7 @@ path_planning::Path MyGenericRRT::planND(Eigen::VectorXd init_, Eigen::VectorXd 
 
     // int temp = 0;
     for (int num_it = 0; num_it < iteration; num_it++){
-        int step_num = 0;
+        // int step_num = 0;
         if(double(rand())/RAND_MAX < bias){
             Eigen::VectorXd new_point;
             do{
@@ -17,7 +17,7 @@ path_planning::Path MyGenericRRT::planND(Eigen::VectorXd init_, Eigen::VectorXd 
                 if(checkDistance(new_point, pow(10,-6))){
                     break;
                 }
-                step_num++;
+                // step_num++;
             }while(!checkDistance(goal_ - new_point, pow(10,-6)));
             
             if(checkDistance(goal_ - new_point, pow(10,-5))){
