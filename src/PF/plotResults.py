@@ -145,10 +145,10 @@ def updateFrame(frameIndex):
     return (particlesPlot, vehiclePlot, targetPlot, estimatePlot, fovPatch, heatMap)
 
 # Create animation
-animation = FuncAnimation(fig, updateFrame, frames=data.shape[0], interval=20, repeat=False)
+animation = FuncAnimation(fig, updateFrame, frames=data.shape[0], interval=5, repeat=False)
 
 # Display the animation
 plt.show()
 
 # Save animation video as a file
-# animation.save("particle_filter.mp4", fps=20)
+# animation.save("particle_filter.mp4", fps=5)
