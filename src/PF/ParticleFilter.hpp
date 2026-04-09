@@ -22,7 +22,7 @@ class ParticleFilter {
             maxX(maxX_), maxY(maxY_), 
             distX(0.0, maxX), 
             distY(0.0, maxY) {
-            observedGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
+                observedGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
         }
 
         // Define particle structure
