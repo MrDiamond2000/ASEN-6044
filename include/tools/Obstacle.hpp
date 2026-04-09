@@ -9,8 +9,8 @@ namespace path_planning {
 
 class Polygon {
     public:
-        // /// @brief Used for deserialization
-        // Polygon() = default;
+        /// @brief Used for deserialization
+        Polygon() = default;
         
         /// @brief Construct from a set of vertices ASSUMED to be in counter clock wise order
         /// @param vertices_ccw Ordered counter clock wise order
