@@ -4,7 +4,7 @@ environment:
 
 pathPlanner:
   bias: 0.1
-  iteration: 1000
+  iteration: 10000
   stepSize: 0.5
 
 particleFilter:

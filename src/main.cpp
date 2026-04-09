@@ -95,7 +95,7 @@ int main(){
     bool found = false;
     double currentHeading = vehicleInitialHeading;
 
-    size_t pathCounter; // initialize to be greater than 10 to ensure a path is planned at the first iteration
+    size_t pathCounter = 0; // initialize to be greater than 10 to ensure a path is planned at the first iteration
     path_planning::Path2D path;
 
     LOG("Starting particle filter iterations...");
@@ -140,8 +140,12 @@ int main(){
         }
 
         // plan a path towards the filter estimate
-        if (!path.valid || pathCounter > 8 || pathCounter+2 < path.waypoints.size()) {
+        if (!path.valid || pathCounter > 8 || pathCounter+2 >= path.waypoints.size()) {
             path = rrt.plan(vehicle, estimate);
+            if (!path.valid) {
+                LOG("No valid path found. Ending simulation.");
+                break;
+            }
             pathCounter = 0;
         }
         else {
