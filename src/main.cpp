@@ -80,7 +80,7 @@ int main(){
     pf.setObservedDecayRate(observedDecayRate);
     Eigen::Vector2d target = pf.initializeParticles(collision_checker);
     Eigen::Vector2d estimate = pf.estimate();
-    std::pair<double, Eigen::Vector2d> densityEstimate = pf.estimate_density();
+    std::pair<double, Eigen::Vector2d> densityEstimate = pf.estimate_density(collision_checker);
     Eigen::Vector2d estimate_density = densityEstimate.second;
     Eigen::Vector2d direction;
     Eigen::Vector2d headingVector;
@@ -147,7 +147,10 @@ int main(){
         // plan a path towards the filter estimate
         if (!path.valid || pathCounter > 20 || pathCounter+2 >= path.waypoints.size()) {
             estimate = pf.estimate();
-            densityEstimate = pf.estimate_density();
+
+            Eigen::Vector2d goal = estimate;
+
+            densityEstimate = pf.estimate_density(collision_checker);
             estimate_density = densityEstimate.second;
 
             // get estimate using density grid method
@@ -160,11 +163,10 @@ int main(){
 
             if (densityMode) {
                 LOG("At iteration " << i << ", using density grid estimate with score " << densityEstimate.first);
-                estimate = densityEstimate.second;
+                goal = densityEstimate.second;
             }
             else {
-                LOG("At iteration " << i << ", using not using density");
-                estimate = pf.estimate();
+                LOG("At iteration " << i << ", not using density");
             }
             
 

@@ -264,7 +264,7 @@ class ParticleFilter {
             return bestParticlePosition;
         }
 
-        std::pair<double, Eigen::Vector2d> estimate_density() {
+        std::pair<double, Eigen::Vector2d> estimate_density(Point2DCollisionChecker& checker) {
             // Reset density grid
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
@@ -298,6 +298,7 @@ class ParticleFilter {
             // Find cell with highest density
             double maxDensity = 0.0;
             Eigen::Vector2d bestParticlePosition;
+            Eigen::Vector2d tempBestParticlePosition;
 
             // for (int i = 0; i < gridSizeX; i++) {
             //     for (int j = 0; j < gridSizeY; j++) {
@@ -311,6 +312,9 @@ class ParticleFilter {
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
                     if (surroundingDensityGrid[i][j] > maxDensity) {
+                        tempBestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
+                        if (checker.isCollide(tempBestParticlePosition)) continue; // Skip if cell is in an obstacle   
+
                         maxDensity = surroundingDensityGrid[i][j];
                         bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
                     }
