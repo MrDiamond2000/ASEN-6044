@@ -5,11 +5,11 @@ environment:
 pathPlanner:
   bias: 0.1
   iteration: 10000
-  stepSize: 0.5
+  stepSize: 0.2
 
 particleFilter:
   Ns: 1000
-  stepSize: 0.1
+  stepSize: 0.2
   resampleThreshold: 0.75
   gridSizeX: 50
   gridSizeY: 50
@@ -17,6 +17,7 @@ particleFilter:
   maxObservedScore: 10
   observedDecayRate: 0.995
   densityThreshold: 2.5
+  densityThresholdReset: 2.0
 
 vehicle:
   vehicleInitialX: 1.0
@@ -25,7 +26,7 @@ vehicle:
 
 sensor:
   fovFractionOfPi: 3.0
-  range: 4.0
+  range: 2.0
 
 misc:
   maxIterations: 2000

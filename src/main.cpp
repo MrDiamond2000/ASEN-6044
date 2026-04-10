@@ -44,6 +44,7 @@ int main(){
     double maxObservedScore = config["particleFilter"]["maxObservedScore"].as<double>();
     double observedDecayRate = config["particleFilter"]["observedDecayRate"].as<double>();
     double densityThreshold = config["particleFilter"]["densityThreshold"].as<double>();
+    double densityThresholdReset = config["particleFilter"]["densityThresholdReset"].as<double>();
 
     double vehicleInitialX = config["vehicle"]["vehicleInitialX"].as<double>();
     double vehicleInitialY = config["vehicle"]["vehicleInitialY"].as<double>();
@@ -100,6 +101,7 @@ int main(){
 
     size_t pathCounter = 0; // initialize to be greater than 10 to ensure a path is planned at the first iteration
     path_planning::Path2D path;
+    bool densityMode = false; // set to true to use density grid method for estimation, false to use particle weights
 
     LOG("Starting particle filter iterations...");
     for (int i = 0; i < maxIterations; i++) {
@@ -130,9 +132,6 @@ int main(){
 
         // run the particle filter
         pf.step(collision_checker, lineOfSightChecker, vehicle, headingVector, fovCosine, range, stepSize, resampleThreshold);
-        estimate = pf.estimate();
-        densityEstimate = pf.estimate_density();
-        estimate_density = densityEstimate.second;
         
 
         // check if the target has been detected
@@ -146,14 +145,31 @@ int main(){
         }
 
         // plan a path towards the filter estimate
-        if (!path.valid || pathCounter > 8 || pathCounter+2 >= path.waypoints.size()) {
+        if (!path.valid || pathCounter > 20 || pathCounter+2 >= path.waypoints.size()) {
+            estimate = pf.estimate();
+            densityEstimate = pf.estimate_density();
+            estimate_density = densityEstimate.second;
+
             // get estimate using density grid method
-            if (densityEstimate.first > densityThreshold) { 
+            if (densityEstimate.first < densityThresholdReset) { 
+                densityMode = false;
+            }
+            else if (densityEstimate.first > densityThreshold) {
+                densityMode = true;
+            }
+
+            if (densityMode) {
                 LOG("At iteration " << i << ", using density grid estimate with score " << densityEstimate.first);
                 estimate = densityEstimate.second;
             }
+            else {
+                LOG("At iteration " << i << ", using not using density");
+                estimate = pf.estimate();
+            }
+            
 
             path = rrt.plan(vehicle, estimate);
+            DEBUG("path planning done!");
             if (!path.valid) {
                 LOG("No valid path found. Ending simulation.");
                 break;
