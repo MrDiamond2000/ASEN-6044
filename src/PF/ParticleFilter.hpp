@@ -72,6 +72,9 @@ class ParticleFilter {
 
             double dx = position(0) - observerPosition(0);
             double dy = position(1) - observerPosition(1);
+
+            if (dx > range || dx < -range || dy > range || dy < -range) return false;
+
             double distanceSquared = dx*dx + dy*dy;
 
             if (distanceSquared > range*range) return false;
