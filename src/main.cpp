@@ -43,6 +43,7 @@ int main(){
     int maxPropogationAttempts = config["particleFilter"]["maxPropogationAttempts"].as<int>();
     double maxObservedScore = config["particleFilter"]["maxObservedScore"].as<double>();
     double observedDecayRate = config["particleFilter"]["observedDecayRate"].as<double>();
+    double densityThreshold = config["particleFilter"]["densityThreshold"].as<double>();
 
     double vehicleInitialX = config["vehicle"]["vehicleInitialX"].as<double>();
     double vehicleInitialY = config["vehicle"]["vehicleInitialY"].as<double>();
@@ -78,6 +79,8 @@ int main(){
     pf.setObservedDecayRate(observedDecayRate);
     Eigen::Vector2d target = pf.initializeParticles(collision_checker);
     Eigen::Vector2d estimate = pf.estimate();
+    std::pair<double, Eigen::Vector2d> densityEstimate = pf.estimate_density();
+    Eigen::Vector2d estimate_density = densityEstimate.second;
     Eigen::Vector2d direction;
     Eigen::Vector2d headingVector;
 
@@ -117,7 +120,7 @@ int main(){
         headingVector = {cos(currentHeading), sin(currentHeading)};
 
         // output the vehicle, estimate, and target positions to the csv file
-        file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1);
+        file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
         
         // output the particle positions to the csv file
         for (auto& p : pf.particles) {
@@ -128,6 +131,9 @@ int main(){
         // run the particle filter
         pf.step(collision_checker, lineOfSightChecker, vehicle, headingVector, fovCosine, range, stepSize, resampleThreshold);
         estimate = pf.estimate();
+        densityEstimate = pf.estimate_density();
+        estimate_density = densityEstimate.second;
+        
 
         // check if the target has been detected
         if (pf.detectTarget(target, vehicle, headingVector, lineOfSightChecker, fovCosine, range)) {
@@ -141,6 +147,12 @@ int main(){
 
         // plan a path towards the filter estimate
         if (!path.valid || pathCounter > 8 || pathCounter+2 >= path.waypoints.size()) {
+            // get estimate using density grid method
+            if (densityEstimate.first > densityThreshold) { 
+                LOG("At iteration " << i << ", using density grid estimate with score " << densityEstimate.first);
+                estimate = densityEstimate.second;
+            }
+
             path = rrt.plan(vehicle, estimate);
             if (!path.valid) {
                 LOG("No valid path found. Ending simulation.");
@@ -170,7 +182,7 @@ int main(){
     }
 
     // output the final particle filter estimate to the csv
-    file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1);
+    file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
 
     // output the final particle positions to the csv
     for (auto& p : pf.particles) {

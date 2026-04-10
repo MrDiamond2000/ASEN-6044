@@ -16,6 +16,7 @@ particleFilter:
   maxPropogationAttempts: 20
   maxObservedScore: 10
   observedDecayRate: 0.995
+  densityThreshold: 2.5
 
 vehicle:
   vehicleInitialX: 1.0
@@ -24,7 +25,7 @@ vehicle:
 
 sensor:
   fovFractionOfPi: 3.0
-  range: 2.0
+  range: 4.0
 
 misc:
   maxIterations: 2000
