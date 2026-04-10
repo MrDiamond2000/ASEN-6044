@@ -23,8 +23,6 @@ class ParticleFilter {
             distX(0.0, maxX), 
             distY(0.0, maxY) {
                 observedGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
-                densityGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
-                surroundingDensityGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
         }
 
         // Define particle structure
@@ -261,62 +259,6 @@ class ParticleFilter {
             return bestParticlePosition;
         }
 
-        std::pair<double, Eigen::Vector2d> estimate_density() {
-            // Reset density grid
-            for (int i = 0; i < gridSizeX; i++) {
-                for (int j = 0; j < gridSizeY; j++) {
-                    densityGrid[i][j] = 0.0;
-                    surroundingDensityGrid[i][j] = 0.0;
-                }
-            }
-
-            // Add particle weights to density grid
-            for (auto& p : particles) {
-                int ix = std::min(std::max(int((p.position(0)/maxX)*gridSizeX), 0), gridSizeX - 1);
-                int iy = std::min(std::max(int((p.position(1)/maxY)*gridSizeY), 0), gridSizeY - 1);
-                densityGrid[ix][iy] += p.weight;
-            }
-
-            // Add surrounding cells to density grid to create a smoother estimate
-            for (int i = 0; i < gridSizeX; i++) {
-                for (int j = 0; j < gridSizeY; j++) {
-                    for (int di = -1; di <= 1; di++) {
-                        for (int dj = -10; dj <= 10; dj++) {
-                            int ni = i + di;
-                            int nj = j + dj;
-                            if (ni >= 0 && ni < gridSizeX && nj >= 0 && nj < gridSizeY) {
-                                surroundingDensityGrid[i][j] += densityGrid[ni][nj];
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Find cell with highest density
-            double maxDensity = 0.0;
-            Eigen::Vector2d bestParticlePosition;
-
-            // for (int i = 0; i < gridSizeX; i++) {
-            //     for (int j = 0; j < gridSizeY; j++) {
-            //         if (densityGrid[i][j] > maxDensity) {
-            //             maxDensity = densityGrid[i][j];
-            //             bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-            //         }
-            //     }
-            // }
-
-            for (int i = 0; i < gridSizeX; i++) {
-                for (int j = 0; j < gridSizeY; j++) {
-                    if (surroundingDensityGrid[i][j] > maxDensity) {
-                        maxDensity = surroundingDensityGrid[i][j];
-                        bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-                    }
-                }
-            }
-
-            return {maxDensity*gridSizeX*gridSizeY/(10*10), bestParticlePosition};
-        }
-
         // Performs a Sequential Importance Sampling (SIS) Particle Filter step
         void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fovCosine, double range, double stepSize, double resampleThreshold) {
 
@@ -355,6 +297,4 @@ class ParticleFilter {
         double maxY;
         std::uniform_real_distribution<double> distX;
         std::uniform_real_distribution<double> distY;
-        std::vector<std::vector<double>> densityGrid;
-        std::vector<std::vector<double>> surroundingDensityGrid;
 };

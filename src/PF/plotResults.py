@@ -63,7 +63,6 @@ particlesPlot, = ax.plot([], [], ".", color="blue", markersize=2, label="Particl
 vehiclePlot, = ax.plot([], [], "o", color="lime", markersize=10, label="Vehicle")
 targetPlot, = ax.plot([], [], "x", color="red", markersize=10, label="Target")
 estimatePlot, = ax.plot([], [], "*", color="lime", markersize=10, label="Estimate")
-densityEstimatePlot, = ax.plot([], [], "s", color="cyan", markersize=10, label="Density Estimate")  
 
 # Plot the field of view path over time
 fovPatch = Polygon([[0,0]], closed=True, color="lime", alpha=0.2, label="Sensor FOV")
@@ -130,14 +129,12 @@ def updateFrame(frameIndex):
     heading = currentPositions[2:4]
     estimate = currentPositions[4:6]
     target = currentPositions[6:8]
-    estimate_density = currentPositions[8:10]
-    particles = currentPositions[10:].reshape(-1,2)
+    particles = currentPositions[8:].reshape(-1,2)
 
     # Update the plots with the current vehicle, estimate, target, and particle positions
     vehiclePlot.set_data([vehicle[0]], [vehicle[1]])
     targetPlot.set_data([target[0]], [target[1]])
     estimatePlot.set_data([estimate[0]], [estimate[1]])
-    densityEstimatePlot.set_data([estimate_density[0]], [estimate_density[1]])
     particlesPlot.set_data(particles[:,0], particles[:,1])
 
     # Update the sensor fov shape
@@ -159,7 +156,7 @@ def updateFrame(frameIndex):
     # Dynamically update the plot title
     ax.set_title(f"Particle Filter Estimate at Frame {frameIndex}")
 
-    return (particlesPlot, vehiclePlot, targetPlot, estimatePlot, densityEstimatePlot, fovPatch, heatMap)
+    return (particlesPlot, vehiclePlot, targetPlot, estimatePlot, fovPatch, heatMap)
 
 # Create animation
 animation = FuncAnimation(fig, updateFrame, frames=data.shape[0], interval=5, repeat=False)
