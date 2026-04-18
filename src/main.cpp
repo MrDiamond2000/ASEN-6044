@@ -170,7 +170,7 @@ int main(){
             }
             
 
-            path = rrt.plan(vehicle, estimate);
+            path = rrt.plan(vehicle, goal);
             DEBUG("path planning done!");
             if (!path.valid) {
                 LOG("No valid path found. Ending simulation.");
