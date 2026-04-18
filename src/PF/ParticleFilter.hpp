@@ -284,7 +284,7 @@ class ParticleFilter {
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
                     for (int di = -1; di <= 1; di++) {
-                        for (int dj = -10; dj <= 10; dj++) {
+                        for (int dj = -5; dj <= 5; dj++) {
                             int ni = i + di;
                             int nj = j + dj;
                             if (ni >= 0 && ni < gridSizeX && nj >= 0 && nj < gridSizeY) {
