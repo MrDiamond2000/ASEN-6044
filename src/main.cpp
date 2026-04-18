@@ -43,6 +43,8 @@ int main(){
     int maxPropogationAttempts = config["particleFilter"]["maxPropogationAttempts"].as<int>();
     double maxObservedScore = config["particleFilter"]["maxObservedScore"].as<double>();
     double observedDecayRate = config["particleFilter"]["observedDecayRate"].as<double>();
+    double densityThreshold = config["particleFilter"]["densityThreshold"].as<double>();
+    double densityThresholdReset = config["particleFilter"]["densityThresholdReset"].as<double>();
 
     double vehicleInitialX = config["vehicle"]["vehicleInitialX"].as<double>();
     double vehicleInitialY = config["vehicle"]["vehicleInitialY"].as<double>();
@@ -78,6 +80,8 @@ int main(){
     pf.setObservedDecayRate(observedDecayRate);
     Eigen::Vector2d target = pf.initializeParticles(collision_checker);
     Eigen::Vector2d estimate = pf.estimate();
+    std::pair<double, Eigen::Vector2d> densityEstimate = pf.estimate_density(collision_checker);
+    Eigen::Vector2d estimate_density = densityEstimate.second;
     Eigen::Vector2d direction;
     Eigen::Vector2d headingVector;
 
@@ -97,6 +101,7 @@ int main(){
 
     size_t pathCounter = 0; // initialize to be greater than 10 to ensure a path is planned at the first iteration
     path_planning::Path2D path;
+    bool densityMode = false; // set to true to use density grid method for estimation, false to use particle weights
 
     LOG("Starting particle filter iterations...");
     for (int i = 0; i < maxIterations; i++) {
@@ -117,7 +122,7 @@ int main(){
         headingVector = {cos(currentHeading), sin(currentHeading)};
 
         // output the vehicle, estimate, and target positions to the csv file
-        file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1);
+        file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
         
         // output the particle positions to the csv file
         for (auto& p : pf.particles) {
@@ -127,7 +132,7 @@ int main(){
 
         // run the particle filter
         pf.step(collision_checker, lineOfSightChecker, vehicle, headingVector, fovCosine, range, stepSize, resampleThreshold);
-        estimate = pf.estimate();
+        
 
         // check if the target has been detected
         if (pf.detectTarget(target, vehicle, headingVector, lineOfSightChecker, fovCosine, range)) {
@@ -140,8 +145,33 @@ int main(){
         }
 
         // plan a path towards the filter estimate
-        if (!path.valid || pathCounter > 8 || pathCounter+2 >= path.waypoints.size()) {
-            path = rrt.plan(vehicle, estimate);
+        if (!path.valid || pathCounter > 20 || pathCounter+2 >= path.waypoints.size()) {
+            estimate = pf.estimate();
+
+            Eigen::Vector2d goal = estimate;
+
+            densityEstimate = pf.estimate_density(collision_checker);
+            estimate_density = densityEstimate.second;
+
+            // get estimate using density grid method
+            if (densityEstimate.first < densityThresholdReset) { 
+                densityMode = false;
+            }
+            else if (densityEstimate.first > densityThreshold) {
+                densityMode = true;
+            }
+
+            if (densityMode) {
+                LOG("At iteration " << i << ", using density grid estimate with score " << densityEstimate.first);
+                goal = densityEstimate.second;
+            }
+            else {
+                LOG("At iteration " << i << ", not using density");
+            }
+            
+
+            path = rrt.plan(vehicle, goal);
+            DEBUG("path planning done!");
             if (!path.valid) {
                 LOG("No valid path found. Ending simulation.");
                 break;
@@ -170,7 +200,7 @@ int main(){
     }
 
     // output the final particle filter estimate to the csv
-    file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1);
+    file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
 
     // output the final particle positions to the csv
     for (auto& p : pf.particles) {
