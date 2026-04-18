@@ -265,7 +265,9 @@ class ParticleFilter {
         }
 
         std::pair<double, Eigen::Vector2d> estimate_density(Point2DCollisionChecker& checker) {
-            // Reset density grid
+            const int radius = 10;
+
+            // Reset grids
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
                     densityGrid[i][j] = 0.0;
@@ -280,48 +282,62 @@ class ParticleFilter {
                 densityGrid[ix][iy] += p.weight;
             }
 
-            // Add surrounding cells to density grid to create a smoother estimate
+            // Calculate the number of cells in the circular area
+            int cellCount = 0;
+            for (int di = -radius; di <= radius; di++) {
+                for (int dj = -radius; dj <= radius; dj++) {
+                    if (di*di + dj*dj <= radius*radius) {
+                        cellCount++;
+                    }
+                }
+            }
+
+            double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
+            double area = cellCount*cellArea;
+
+            // Circular smoothing of density
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
-                    for (int di = -1; di <= 1; di++) {
-                        for (int dj = -5; dj <= 5; dj++) {
+
+                    double weightedSum = 0.0;
+
+                    for (int di = -radius; di <= radius; di++) {
+                        for (int dj = -radius; dj <= radius; dj++) {
+
+                            // Circular mask
+                            if (di*di + dj*dj > radius*radius) continue;
                             int ni = i + di;
                             int nj = j + dj;
+
                             if (ni >= 0 && ni < gridSizeX && nj >= 0 && nj < gridSizeY) {
-                                surroundingDensityGrid[i][j] += densityGrid[ni][nj];
+                                weightedSum += densityGrid[ni][nj];
                             }
                         }
                     }
+
+                    surroundingDensityGrid[i][j] = weightedSum;
                 }
             }
 
             // Find cell with highest density
             double maxDensity = 0.0;
             Eigen::Vector2d bestParticlePosition;
-            Eigen::Vector2d tempBestParticlePosition;
-
-            // for (int i = 0; i < gridSizeX; i++) {
-            //     for (int j = 0; j < gridSizeY; j++) {
-            //         if (densityGrid[i][j] > maxDensity) {
-            //             maxDensity = densityGrid[i][j];
-            //             bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-            //         }
-            //     }
-            // }
 
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
-                    if (surroundingDensityGrid[i][j] > maxDensity) {
-                        tempBestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-                        if (checker.isCollide(tempBestParticlePosition)) continue; // Skip if cell is in an obstacle   
+                    if (surroundingDensityGrid[i][j] <= maxDensity) continue;
 
-                        maxDensity = surroundingDensityGrid[i][j];
-                        bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-                    }
+                    Eigen::Vector2d pos((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
+                    if (checker.isCollide(pos)) continue;
+
+                    maxDensity = surroundingDensityGrid[i][j];
+                    bestParticlePosition = pos;
                 }
             }
 
-            return {maxDensity*gridSizeX*gridSizeY/(10*10), bestParticlePosition};
+            // Convert density to weight per unit area
+            double densityPerArea = maxDensity/area;
+            return {densityPerArea, bestParticlePosition};
         }
 
         // Performs a Sequential Importance Sampling (SIS) Particle Filter step

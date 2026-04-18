@@ -16,8 +16,8 @@ particleFilter:
   maxPropogationAttempts: 20
   maxObservedScore: 10
   observedDecayRate: 0.995
-  densityThreshold: 2.0
-  densityThresholdReset: 2.0
+  densityThreshold: 0.018
+  densityThresholdReset: 0.016
 
 vehicle:
   vehicleInitialX: 1.0
