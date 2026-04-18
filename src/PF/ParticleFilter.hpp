@@ -342,7 +342,7 @@ class ParticleFilter {
             // Compute Ness
             double Ness = computeNess();
 
-            // Resample and add jitter
+            // Resample
             if (Ness < resampleThreshold*Ns) {
                 resample();
             }
