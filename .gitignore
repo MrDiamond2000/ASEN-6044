@@ -39,3 +39,10 @@
 
 # debug information files
 *.dwo
+
+# specifict to macOS
+*.DS_Store
+
+# folder come with Visual Studio Code and build files
+.vscode/
+build/
