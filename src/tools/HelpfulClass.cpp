@@ -35,6 +35,44 @@ bool Point2DCollisionChecker::isCollide2P(const Eigen::VectorXd& point1_, const 
     return false;
 }
 
+std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker::isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence) const {
+    std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments;
+
+    double s = -2 * log(1 - 0.95); // chi-squared value for 2 degrees of freedom at 95% confidence
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> es(covariance * s);
+    Eigen::Vector2d eigenvalues = es.eigenvalues();
+    Eigen::Matrix2d eigenvectors = es.eigenvectors();
+
+    // find angle the eigenvector are from the x-axis
+    double angle = atan2(eigenvectors(1, 0), eigenvectors(0, 0));
+
+    for (size_t ob_idx = 0; ob_idx < env.obstacles.size(); ++ob_idx) {
+        const path_planning::Obstacle2D& obstacle = env.obstacles[ob_idx];
+        int n = obstacle.verticesCCW().size();
+        for (int vertix_idx = 0; vertix_idx < n; ++vertix_idx) {
+            const Eigen::VectorXd& v1 = obstacle.verticesCCW()[vertix_idx];
+            const Eigen::VectorXd& v2 = obstacle.verticesCCW()[(vertix_idx + 1) % n];
+
+            // transform the line segment to the ellipse's coordinate frame
+            Eigen::Matrix2d rotation;
+            rotation << cos(-angle), -sin(-angle),
+                        sin(-angle), cos(-angle);
+            Eigen::Vector2d transformed_v1 = rotation * (v1 - center);
+            Eigen::Vector2d transformed_v2 = rotation * (v2 - center);
+
+            // create a line for y = mx + c form
+            double m = (transformed_v2(1) - transformed_v1(1)) / (transformed_v2(0) - transformed_v1(0));
+            double c = transformed_v1(1) - m * transformed_v1(0);
+
+            if (c*c < eigenvalues(1) + m*m*eigenvalues(0)) {
+                collision_segments.push_back({v1, v2});
+            }
+        }
+    }
+
+    return collision_segments;
+}
+
 bool Point2DCollisionChecker::thisObstacle(int ob_idx_, const Eigen::VectorXd& point_){
     const path_planning::Obstacle2D& obstacle = env.obstacles[ob_idx_];
     double cross_product;

@@ -4,6 +4,7 @@
 #include "tools/ConfigurationSpace.hpp"
 #include "core/UsefulMacros.hpp"
 #include "tools/Environment.hpp"
+#include <Eigen/Dense>
 
 // #define GAP 0.05
 // #define GAPDECEN 0.1
@@ -34,6 +35,7 @@ class Point2DCollisionChecker : public BaseCollisionChecker<Eigen::VectorXd>{
 
         bool isCollide(const Eigen::VectorXd& point_) override;
         bool isCollide2P(const Eigen::VectorXd& point1_, const Eigen::VectorXd& point2_) override;
+        std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence) const;
 
         bool thisObstacle(int ob_idx_, const Eigen::VectorXd& point_);
 
