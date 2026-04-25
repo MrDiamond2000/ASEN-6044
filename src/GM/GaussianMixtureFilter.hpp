@@ -200,6 +200,9 @@ class GaussianMixtureFilter {
 
                     // Use the current updated Gaussian, not always the original one
                     Eigen::Vector2d mu = updatedgmObjects[i].position;
+
+                    if (a.dot(mu) > b) continue; // If the mean is on the left side of the line, then we are good and can skip to the next segment
+
                     Eigen::Matrix2d Sigma = updatedgmObjects[i].covariance;
 
                     double m = a.dot(mu);
