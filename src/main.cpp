@@ -1,221 +1,299 @@
 #include <iostream>
 #include "core/MySamplingBasedPlanners.hpp"
 #include "PF/ParticleFilter.hpp"
+#include "GM/GaussianMixtureFilter.hpp"
 #include <fstream>
 #include <yaml-cpp/yaml.h>
 #include "tools/Logging.hpp"
+#include <chrono>
+
+//     // test collision checker
+//     Point2DCollisionChecker collision_checker(env);
+//     // LOG("Is (3, 3.5) in collision: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+
+//     // test path planner
+//     MyRRT rrt(rrtBias, rrtIteration, rrtStepSize);
+//     rrt.set_environment(env);
+//     //path_planning::Path2D path_output = rrt.plan(Eigen::Vector2d(1,1), Eigen::Vector2d(5,5));
+
+//     //LOG("Path valid: " << path_output.valid);
+//     //if (path_output.valid){
+//     //    for (size_t i = 0; i < path_output.waypoints.size(); i++){
+//     //        LOG(path_output.waypoints[i].transpose());
+//     //    }
+//     //}
 
 int main(){
-    // build environment
+
+    // Create environment and collision checkers
     path_planning::Environment2D env;
-    // std::vector<Eigen::Vector2d> vertices_ccw = {Eigen::Vector2d(2.0, 3.0), Eigen::Vector2d(8.0, 3.0), Eigen::Vector2d(8.0, 4.0), Eigen::Vector2d(2.0, 4.0)};
-    // path_planning::Obstacle2D obs1(vertices_ccw);
-    // vertices_ccw = {Eigen::Vector2d(2.0, 6.0), Eigen::Vector2d(8.0, 6.0), Eigen::Vector2d(8.0, 7.0), Eigen::Vector2d(2.0, 7.0)};
-    // path_planning::Obstacle2D obs2(vertices_ccw);
-
-    // env.obstacles.push_back(obs1);
-    // env.obstacles.push_back(obs2);
-
-    // build enviroument with yaml file
     env.deserialize("input/problem.yaml");
 
-    // test collision checker
     Point2DCollisionChecker collision_checker(env);
-    // LOG("Is (3, 3.5) in collision: " << collision_checker.isCollide(Eigen::Vector2d(3, 3.5)));
+    BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker = collision_checker;
 
-    // load in parameters from the parameter yaml file
-    YAML::Node config = YAML::LoadFile("src/PF/ParticleFilterParams.yaml");
-
-    // double maxX = config["environment"]["maxX"].as<double>();
-    // double maxY = config["environment"]["maxY"].as<double>();
     double maxX = env.x_max;
     double maxY = env.y_max;
 
-    double rrtBias = config["pathPlanner"]["bias"].as<double>();
-    double rrtIteration = config["pathPlanner"]["iteration"].as<double>();
-    double rrtStepSize = config["pathPlanner"]["stepSize"].as<double>();
+    // Load config files
+    YAML::Node pfConfig = YAML::LoadFile("src/PF/ParticleFilterParams.yaml");
+    YAML::Node gmConfig = YAML::LoadFile("src/GM/GaussianMixtureParams.yaml");
 
-    int Ns = config["particleFilter"]["Ns"].as<int>();
-    double stepSize = config["particleFilter"]["stepSize"].as<double>();
-    double resampleThreshold = config["particleFilter"]["resampleThreshold"].as<double>();
-    int gridSizeX = config["particleFilter"]["gridSizeX"].as<int>();
-    int gridSizeY = config["particleFilter"]["gridSizeY"].as<int>();
-    int maxPropogationAttempts = config["particleFilter"]["maxPropogationAttempts"].as<int>();
-    double maxObservedScore = config["particleFilter"]["maxObservedScore"].as<double>();
-    double observedDecayRate = config["particleFilter"]["observedDecayRate"].as<double>();
-    double densityThreshold = config["particleFilter"]["densityThreshold"].as<double>();
-    double densityThresholdReset = config["particleFilter"]["densityThresholdReset"].as<double>();
+    // Define shared parameters
+    double vehicleInitialX = pfConfig["vehicle"]["vehicleInitialX"].as<double>();
+    double vehicleInitialY = pfConfig["vehicle"]["vehicleInitialY"].as<double>();
+    double vehicleInitialHeading = pfConfig["vehicle"]["vehicleInitialHeading"].as<double>();
 
-    double vehicleInitialX = config["vehicle"]["vehicleInitialX"].as<double>();
-    double vehicleInitialY = config["vehicle"]["vehicleInitialY"].as<double>();
-    double vehicleInitialHeading = config["vehicle"]["vehicleInitialHeading"].as<double>();
+    double fovFractionOfPi = pfConfig["sensor"]["fovFractionOfPi"].as<double>();
+    double range = pfConfig["sensor"]["range"].as<double>();
+    int maxIterations = pfConfig["misc"]["maxIterations"].as<int>();
 
-    double fovFractionOfPi = config["sensor"]["fovFractionOfPi"].as<double>();
-    double range = config["sensor"]["range"].as<double>();
-
-    int maxIterations = config["misc"]["maxIterations"].as<int>();
-    std::string outputFile = config["misc"]["outputFile"].as<std::string>();
-
-    // test path planner
-    MyRRT rrt(rrtBias, rrtIteration, rrtStepSize);
-    rrt.set_environment(env);
-    //path_planning::Path2D path_output = rrt.plan(Eigen::Vector2d(1,1), Eigen::Vector2d(5,5));
-
-    //LOG("Path valid: " << path_output.valid);
-    //if (path_output.valid){
-    //    for (size_t i = 0; i < path_output.waypoints.size(); i++){
-    //        LOG(path_output.waypoints[i].transpose());
-    //    }
-    //}
-
-    // test particle filter
-    BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker = collision_checker;
-
-    // create particle filter object and pass in the number of particles and environment size
-    ParticleFilter pf(Ns, maxX, maxY, gridSizeX, gridSizeY);
-
-    // generate initial particles, target, and estimate
-    pf.setMaxPropogationAttempts(maxPropogationAttempts);
-    pf.setMaxObservedScore(maxObservedScore);
-    pf.setObservedDecayRate(observedDecayRate);
-    Eigen::Vector2d target = pf.initializeParticles(collision_checker);
-    Eigen::Vector2d estimate = pf.estimate();
-    std::pair<double, Eigen::Vector2d> densityEstimate = pf.estimate_density(collision_checker);
-    Eigen::Vector2d estimate_density = densityEstimate.second;
-    Eigen::Vector2d direction;
-    Eigen::Vector2d headingVector;
-
-    // open output csv file
-    std::ofstream file(outputFile, std::ios::out);
-
-    // initialize a search vehicle
-    Eigen::Vector2d vehicle(vehicleInitialX, vehicleInitialY);
-
-    // define sensor parameters
     double fov = M_PI/fovFractionOfPi;
     double fovCosine = cos(fov/2.0);
 
-    // run particle filter iterations and save data to a csv
-    bool found = false;
-    double currentHeading = vehicleInitialHeading;
+    // Generate target trajectory in advance
+    LOG("Generating shared target trajectory...");
 
-    size_t pathCounter = 0; // initialize to be greater than 10 to ensure a path is planned at the first iteration
-    path_planning::Path2D path;
-    bool densityMode = false; // set to true to use density grid method for estimation, false to use particle weights
+    ParticleFilter pfTemp(pfConfig["Filter"]["Ns"].as<int>(), maxX, maxY, pfConfig["Filter"]["gridSizeX"].as<int>(), pfConfig["Filter"]["gridSizeY"].as<int>());
 
-    LOG("Starting particle filter iterations...");
-    for (int i = 0; i < maxIterations; i++) {
+    // Create initial target location
+    Eigen::Vector2d target = pfTemp.initializeParticles(collision_checker);
+    std::vector<Eigen::Vector2d> targetTrajectory;
+    targetTrajectory.push_back(target);
 
-        // calculate the vehicle heading
-        if(path.valid && pathCounter+2 < path.waypoints.size()){
-            direction = path.waypoints[pathCounter+2] - vehicle;
+    // Propagate the target trajectory through the max number of iterations
+    double stepSizeTarget = pfConfig["Filter"]["stepSize"].as<double>();
+    for(int i = 0; i < maxIterations; i++) {
+        pfTemp.propagate(target, collision_checker, stepSizeTarget);
+        targetTrajectory.push_back(target);
+    }
+
+    // Run the particle filter
+    LOG("RUNNING PARTICLE FILTER");
+
+    // Create particle filter object and pass in the number of particles and environment size
+    ParticleFilter pf(pfConfig["Filter"]["Ns"].as<int>(), maxX, maxY, pfConfig["Filter"]["gridSizeX"].as<int>(), pfConfig["Filter"]["gridSizeY"].as<int>());
+
+    // Generate initial particles
+    pf.setMaxPropogationAttempts(pfConfig["Filter"]["maxPropogationAttempts"].as<int>());
+    pf.setMaxObservedScore(pfConfig["Filter"]["maxObservedScore"].as<double>());
+    pf.setObservedDecayRate(pfConfig["Filter"]["observedDecayRate"].as<double>());
+    pf.initializeParticles(collision_checker); // ignore target
+
+    Eigen::Vector2d pfVehicle(vehicleInitialX, vehicleInitialY);
+    double pfHeading = vehicleInitialHeading;
+
+    // Initialize path planner
+    MyRRT pfRRT(pfConfig["pathPlanner"]["bias"].as<double>(), pfConfig["pathPlanner"]["iteration"].as<double>(), pfConfig["pathPlanner"]["stepSize"].as<double>());
+    pfRRT.set_environment(env);
+    path_planning::Path2D pfPath;
+    size_t pfPathCounter = 0;
+
+    // Open output csv file
+    std::ofstream pfFile(pfConfig["misc"]["outputFile"].as<std::string>());
+
+    int pfFinalIteration = -1;
+    double pfTime = 0.0;
+
+    // Run particle filter iterations
+    for(int i = 0; i < maxIterations; i++) {
+
+        // Find current target, estimate, and density estimate
+        Eigen::Vector2d currTarget = targetTrajectory[i];
+        Eigen::Vector2d estimate = pf.estimate();
+        auto density = pf.estimate_density(collision_checker);
+
+        // Calculate the vehicle heading
+        Eigen::Vector2d direction;
+        if(pfPath.valid && pfPathCounter+2 < pfPath.waypoints.size()) {
+            direction = pfPath.waypoints[pfPathCounter+2] - pfVehicle;
+        } else {
+            direction = estimate - pfVehicle;
         }
-        else{
-            direction = estimate - vehicle;
-        }
 
-        if (direction.norm() > 1e-6) {
+        if(direction.norm() > 1e-6) {
             direction.normalize();
-            currentHeading = atan2(direction(1), direction(0));
+            pfHeading = atan2(direction(1), direction(0));
         }
 
-        headingVector = {cos(currentHeading), sin(currentHeading)};
+        Eigen::Vector2d headingVec(cos(pfHeading), sin(pfHeading));
 
-        // output the vehicle, estimate, and target positions to the csv file
-        file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
-        
-        // output the particle positions to the csv file
-        for (auto& p : pf.particles) {
-            file << "," << p.position(0) << "," << p.position(1);
+        // Output the vehicle, estimate, and target positions to the csv file
+        pfFile << pfVehicle(0) << "," << pfVehicle(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1) << "," << density.second(0) << "," << density.second(1);
+
+        // Output the particle positions to the csv file
+        for(auto& p : pf.particles) {
+            pfFile << "," << p.position(0) << "," << p.position(1);
         }
-        file << "\n";
+        pfFile << "\n";
 
-        // run the particle filter
-        pf.step(collision_checker, lineOfSightChecker, vehicle, headingVector, fovCosine, range, stepSize, resampleThreshold);
-        
+        // Run the particle filter and record runtime
+        auto time1 = std::chrono::high_resolution_clock::now();
+        pf.step(collision_checker, lineOfSightChecker, pfVehicle, headingVec, fovCosine, range, pfConfig["Filter"]["stepSize"].as<double>(), pfConfig["Filter"]["resampleThreshold"].as<double>());
+        auto time2 = std::chrono::high_resolution_clock::now();
 
-        // check if the target has been detected
-        if (pf.detectTarget(target, vehicle, headingVector, lineOfSightChecker, fovCosine, range)) {
-            std::cout << "Target FOUND at iteration " << i << std::endl;
-            std::cout << "True target:      " << target.transpose() << std::endl;
-            std::cout << "Estimate:         " << pf.estimate().transpose() << std::endl;
-            std::cout << "Vehicle Position: " << vehicle.transpose() << std::endl;
-            found = true;
+        pfTime += std::chrono::duration<double>(time2 - time1).count();
+
+        // Check if the target has been detected
+        if(pfFinalIteration == -1 && pf.detectTarget(currTarget, pfVehicle, headingVec, lineOfSightChecker, fovCosine, range)) {
+            LOG("[PF] FOUND at iteration " << i);
+            pfFinalIteration = i;
             break;
         }
 
-        // plan a path towards the filter estimate
-        if (!path.valid || pathCounter > 20 || pathCounter+2 >= path.waypoints.size()) {
-            estimate = pf.estimate();
+        // Plan a path towards the filter estimate
+        if (!pfPath.valid || pfPathCounter > 20 || pfPathCounter+2 >= pfPath.waypoints.size()) {
 
             Eigen::Vector2d goal = estimate;
 
-            densityEstimate = pf.estimate_density(collision_checker);
-            estimate_density = densityEstimate.second;
-
-            // get estimate using density grid method
-            if (densityEstimate.first < densityThresholdReset) { 
-                densityMode = false;
-            }
-            else if (densityEstimate.first > densityThreshold) {
-                densityMode = true;
-            }
-
-            if (densityMode) {
-                LOG("At iteration " << i << ", using density grid estimate with score " << densityEstimate.first);
-                goal = densityEstimate.second;
+            // Get estimate using density grid method if above threshold
+            if(density.first > pfConfig["Filter"]["densityThreshold"].as<double>()) {
+                LOG("[PF] Using density estimate | Density = " << density.first);
+                goal = density.second;
             }
             else {
-                LOG("At iteration " << i << ", not using density");
+                LOG("[PF] Using weighting and exploration estimate | Density = " << density.first);
             }
-            
 
-            path = rrt.plan(vehicle, goal);
-            DEBUG("path planning done!");
-            if (!path.valid) {
-                LOG("No valid path found. Ending simulation.");
+            // Plan the path
+            pfPath = pfRRT.plan(pfVehicle, goal);
+            if(!pfPath.valid) {
+                LOG("[PF] No path found");
                 break;
             }
-            pathCounter = 0;
-        }
+
+            pfPathCounter = 0;
+        } 
         else {
-            pathCounter++;
+            pfPathCounter++;
         }
 
-        // // move one step along the path, but normalize to the step size (velocity) of the vehicle to ensure consistency
-        // Eigen::Vector2d next = path.waypoints[1];
-        // Eigen::Vector2d delta = next - vehicle;
-
-        // if (delta.norm() > stepSize) {
-        //     delta.normalize();
-        //     delta *= stepSize;
-        // }
-
-        // vehicle += delta;
-
-        vehicle = path.waypoints[pathCounter+1];
-
-        // propogate the target position for the next iteration
-        pf.propagate(target, collision_checker, stepSize);
+        // Move one step along the path
+        pfVehicle = pfPath.waypoints[pfPathCounter+1];
     }
 
-    // output the final particle filter estimate to the csv
-    file << vehicle(0) << "," << vehicle(1) << "," << headingVector(0) << ","  << headingVector(1) << "," << estimate(0) << "," << estimate(1) << "," << target(0) << "," << target(1) << "," << estimate_density(0) << "," << estimate_density(1);
+    pfFile.close();
 
-    // output the final particle positions to the csv
-    for (auto& p : pf.particles) {
-            file << "," << p.position(0) << "," << p.position(1);
+    // Run the gaussian mixture filter
+    LOG("RUNNING GAUSSIAN MIXTURE FILTER");
+
+    // Create gaussian mixture filter object and pass in the number of particles and environment size
+    GaussianMixtureFilter gm(gmConfig["Filter"]["M"].as<int>(), maxX, maxY, gmConfig["Filter"]["gridSizeX"].as<int>(), gmConfig["Filter"]["gridSizeY"].as<int>());
+
+    // Generate initial components
+    gm.setMaxPropogationAttempts(gmConfig["Filter"]["maxPropogationAttempts"].as<int>());
+    gm.setMaxObservedScore(gmConfig["Filter"]["maxObservedScore"].as<double>());
+    gm.setObservedDecayRate(gmConfig["Filter"]["observedDecayRate"].as<double>());
+    gm.initializeObjects(collision_checker);
+
+    Eigen::Vector2d gmVehicle(vehicleInitialX, vehicleInitialY);
+    double gmHeading = vehicleInitialHeading;
+
+    // Initialize path planner
+    MyRRT gmRRT(gmConfig["pathPlanner"]["bias"].as<double>(), gmConfig["pathPlanner"]["iteration"].as<double>(), gmConfig["pathPlanner"]["stepSize"].as<double>());
+    gmRRT.set_environment(env);
+    path_planning::Path2D gmPath;
+    size_t gmPathCounter = 0;
+
+    // Open output csv file
+    std::ofstream gmFile(gmConfig["misc"]["outputFile"].as<std::string>());
+
+    int gmFinalIteration = -1;
+    double gmTime = 0.0;
+
+    // Run gaussian mixture filter iterations
+    for(int i = 0; i < maxIterations; i++){
+
+        // Find current target, estimate, and density estimate
+        Eigen::Vector2d currTarget = targetTrajectory[i];
+        Eigen::Vector2d estimate = gm.estimate(collision_checker);
+        auto density = gm.estimate_density(collision_checker);
+
+        // Calculate the vehicle heading
+        Eigen::Vector2d direction;
+        if(gmPath.valid && gmPathCounter+2 < gmPath.waypoints.size()) {
+            direction = gmPath.waypoints[gmPathCounter+2] - gmVehicle;
+        } else {
+            direction = estimate - gmVehicle;
         }
-        file << "\n";
 
-    // close the output csv file
-    file.close();
+        if(direction.norm() > 1e-6){
+            direction.normalize();
+            gmHeading = atan2(direction(1), direction(0));
+        }
 
-    // if the filter did not locate the target, print it's final estimate
-    if (!found) {
-        std::cout << "Target NOT found.\n";
-        std::cout << "Final estimate: " << estimate.transpose() << std::endl;
+        Eigen::Vector2d headingVec(cos(gmHeading), sin(gmHeading));
+
+        // Output the vehicle, estimate, and target positions to the csv file
+        gmFile << gmVehicle(0) << "," << gmVehicle(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1) << "," << density.second(0) << "," << density.second(1);
+
+        // Output the component positions, covariances, and weights to the csv file
+        for(auto& g : gm.components) {
+            gmFile << "," << g.position(0) << "," << g.position(1) << "," << g.covariance(0,0) << "," << g.covariance(0,1) << "," << g.covariance(1,0) << "," << g.covariance(1,1) << "," << g.weight;
+        }
+        gmFile << "\n";
+
+        // Run the gaussian mixture filter and record runtime
+        Eigen::Matrix2d randWalkCov = 0.1*gmConfig["Filter"]["stepSize"].as<double>()*gmConfig["Filter"]["stepSize"].as<double>()*Eigen::Matrix2d::Identity();
+
+        auto time1 = std::chrono::high_resolution_clock::now();
+        gm.step(collision_checker, lineOfSightChecker, gmVehicle, headingVec, fovCosine, range, randWalkCov, gmConfig["Filter"]["stepSize"].as<double>());
+        auto time2 = std::chrono::high_resolution_clock::now();
+
+        gmTime += std::chrono::duration<double>(time2 - time1).count();
+
+        // Check if the target has been detected
+        if(gmFinalIteration == -1 && gm.detectTarget(currTarget, gmVehicle, headingVec, lineOfSightChecker, fovCosine, range)) {
+            LOG("[GM] FOUND at iteration " << i);
+            gmFinalIteration = i;
+            break;
+        }
+
+        // Plan a path towards the filter estimate
+        if (!gmPath.valid || gmPathCounter > 20 || gmPathCounter+2 >= gmPath.waypoints.size()) {
+
+            Eigen::Vector2d goal = estimate;
+
+            // Get estimate using density grid method if above threshold
+            if(density.first > gmConfig["Filter"]["densityThreshold"].as<double>()) {
+                LOG("[GM] Using density estimate | Density = " << density.first);
+                goal = density.second;
+            }
+            else {
+                LOG("[GM] Using weighting and exploration estimate | Density = " << density.first);
+            }
+
+            // Plan the path
+            gmPath = gmRRT.plan(gmVehicle, goal);
+            if(!gmPath.valid){
+                LOG("[GM] No path found");
+                break;
+            }
+
+            gmPathCounter = 0;
+        } 
+        else {
+            gmPathCounter++;
+        }
+
+        // Move one step along the path
+        gmVehicle = gmPath.waypoints[gmPathCounter+1];
     }
+
+    gmFile.close();
+
+    // Print results
+    std::cout << "\nFINAL RESULTS\n";
+
+    std::cout << "Particle Filter:\n";
+    std::cout << "Iteration: " << pfFinalIteration << "\n";
+    std::cout << "Time: " << pfTime << " sec\n";
+
+    std::cout << "\nGaussian Mixture:\n";
+    std::cout << "Iteration: " << gmFinalIteration << "\n";
+    std::cout << "Time: " << gmTime << " sec\n";
+
+    std::cout << "\nSpeed ratio (GM / PF): " << (gmTime/pfTime) << "\n";
 
     return 0;
 }

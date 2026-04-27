@@ -8,22 +8,20 @@ import yaml
 with open("src/PF/ParticleFilterParams.yaml", "r") as file:
     config = yaml.safe_load(file)
 
+# Define problem definition yaml file
 with open("input/problem.yaml", "r") as file:
     problemConfig = yaml.safe_load(file)
 
-# maxX = config["environment"]["maxX"] 
-# maxY = config["environment"]["maxY"]
 maxX = problemConfig["x_max"]
 maxY = problemConfig["y_max"]
 fov = np.pi/config["sensor"]["fovFractionOfPi"]
 sensorRange = config["sensor"]["range"]
-gridSizeX = config["particleFilter"]["gridSizeX"]
-gridSizeY = config["particleFilter"]["gridSizeY"]
-observedDecayRate = config["particleFilter"]["observedDecayRate"]
-maxObservedScore = config["particleFilter"]["maxObservedScore"]
+gridSizeX = config["Filter"]["gridSizeX"]
+gridSizeY = config["Filter"]["gridSizeY"]
+observedDecayRate = config["Filter"]["observedDecayRate"]
+maxObservedScore = config["Filter"]["maxObservedScore"]
 
-# Define obstacles - make sure these are the same as the ones in main.cpp!
-# obstacles = [np.array([[2,3],[8,3],[8,4],[2,4]]), np.array([[2,6],[8,6],[8,7],[2,7]])]
+# Define obstacles - make sure these are the same as those used in main.cpp
 obstacles = []
 for obstacleConfig in problemConfig["obstacles"]:
     vertices = []

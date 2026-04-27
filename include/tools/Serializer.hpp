@@ -49,7 +49,7 @@ class Deserializer {
         Deserializer(const std::string& filepath) : m_valid(true) {
             try {
                 m_node = YAML::LoadFile(filepath);
-            } catch (YAML::ParserException e) {
+            } catch (YAML::ParserException& e) {
                 m_valid = false;
                 ERROR("Failed to load file" << filepath << " ("<< e.what() <<")");
             }

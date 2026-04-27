@@ -6,36 +6,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(SRC_DIR "${CMAKE_SOURCE_DIR}/src")
-set(INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 find_package(Eigen3 REQUIRED)
-find_package(yaml-cpp REQUIRED)
+find_package(yaml-cpp REQUIRED CONFIG)
 
-file(
-	GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
-	"${SRC_DIR}/*.cpp"
-	"${SRC_DIR}/*.cc"
-	"${SRC_DIR}/*.cxx"
+file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
+
+add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        Eigen3::Eigen
+        yaml-cpp
 )
 
-if(NOT PROJECT_SOURCES)
-	message(WARNING "No C++ source files found in ${SRC_DIR}. Add at least one .cpp file.")
-else()
-	add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
-
-	target_include_directories(${PROJECT_NAME}
-		PRIVATE
-			${INCLUDE_DIR}
-	)
-
-    target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
-	target_link_libraries(${PROJECT_NAME} yaml-cpp::yaml-cpp)
-
-	if(MSVC)
-		target_compile_options(${PROJECT_NAME} PRIVATE /W4)
-	else()
-		target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
-	endif()
-endif()
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)

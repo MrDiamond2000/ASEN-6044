@@ -11,15 +11,19 @@
 
 class GaussianMixtureFilter {
     public:
-        GaussianMixtureFilter(int Ns_, int maxX_, int maxY_, int gridSizeX_, int gridSizeY_)
-        :   Ns(Ns_), 
+        GaussianMixtureFilter(int M_, int maxX_, int maxY_, int gridSizeX_, int gridSizeY_)
+        :   M(M_), 
             gen(std::random_device{}()), 
             angleDist(0, 2*M_PI), 
             gridSizeX(gridSizeX_), 
             gridSizeY(gridSizeY_), 
+            maxPropogationAttempts(20), 
+            maxObservedScore(10), 
+            observedDecayRate(0.995), 
             maxX(maxX_), maxY(maxY_), 
             distX(0.0, maxX), 
             distY(0.0, maxY) {
+                observedGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
                 densityGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
                 surroundingDensityGrid.resize(gridSizeX, std::vector<double>(gridSizeY, 0.0));
         }
@@ -30,25 +34,21 @@ class GaussianMixtureFilter {
             Eigen::Matrix2d covariance;
             double weight;
 
-            // define = as copying everything
-            GaussianObject& operator=(const GaussianObject& other) {
-                position = other.position;
-                covariance = other.covariance;
-                weight = other.weight;
-                return *this;
-            }
+            GaussianObject() = default;
+            GaussianObject(const GaussianObject&) = default;
+            GaussianObject& operator=(const GaussianObject&) = default;
         };
 
-        // Define the list of particles
-        std::vector<GaussianObject> gmObjects;
-        std::vector<GaussianObject> updatedgmObjects;
+        // Define the list of components
+        std::vector<GaussianObject> components;
+        std::vector<GaussianObject> updatedComponents;
 
-        // Randomely generate initial particle positions and add corresponding particles, then return a randomely generated target
-        Eigen::Vector2d initializeParticles(Point2DCollisionChecker& checker) {
-            for (int i = 0; i < Ns; i++) {
+        // Randomely generate initial component positions and add corresponding components, then return a randomely generated target
+        Eigen::Vector2d initializeObjects(Point2DCollisionChecker& checker) {
+            for (int i = 0; i < M; i++) {
                 Eigen::Vector2d pos;
                 do { pos = {distX(gen), distY(gen)}; } while (checker.isCollide(pos));
-                addParticle(pos, 1.0/Ns);
+                addComponent(pos, 1.0/M);
             }
 
             Eigen::Vector2d target;
@@ -56,13 +56,59 @@ class GaussianMixtureFilter {
             return target;
         }
 
-        // Add a particle to the filter
-        void addParticle(Eigen::Vector2d position, double weight) {
-            particles.push_back({position, weight});
+        // Add a component to the filter
+        void addComponent(Eigen::Vector2d& position, double weight) {
+            Eigen::Matrix2d covariance = Eigen::Matrix2d::Identity()*0.1; // Not totally sure what a good initial covariance is
+            components.push_back({position, covariance, weight});
         }
 
-        // Check whether the particle (or target) is observed in a defined cone infront of the observer
-        bool observed(Eigen::Vector2d position, Eigen::Vector2d observerPosition, Eigen::Vector2d observerHeading, double fovCosine, double range) {
+        // Setters
+        void setMaxPropogationAttempts(double val) {
+            maxPropogationAttempts = val;
+        }
+
+        void setMaxObservedScore(double val) {
+            maxObservedScore = val;
+        }
+
+        void setObservedDecayRate(double val) {
+            observedDecayRate = val;
+        }
+
+        
+        // Updates the "observed" score of each point in the grid based on the current observer position
+        // Decays the observed score of each grid cell slightly, and then increases the score of the currently observed grid cells
+        void updateObservedGrid(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, BaseCollisionChecker<Eigen::VectorXd>& checker, double fovCosine, double range)
+        {
+            // Decay the observed score
+            for (int i = 0; i < gridSizeX; i++) {
+                for (int j = 0; j < gridSizeY; j++) {
+                    observedGrid[i][j] *= observedDecayRate;
+                }
+            }
+
+            // Increase observed score for currently observable grid cells
+            for (int i = 0; i < gridSizeX; i++) {
+                for (int j = 0; j < gridSizeY; j++) {
+                    Eigen::Vector2d cellPosition((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
+
+                    if (observed(cellPosition, observerPosition, observerHeading, fovCosine, range) && !checker.isCollide2P(Eigen::VectorXd(observerPosition), Eigen::VectorXd(cellPosition))) {
+                        // Do not increase observed score above 5 to avoid blowing up the score
+                        observedGrid[i][j] = std::min(observedGrid[i][j] + 1.0, maxObservedScore);
+                    }
+                }
+            }
+        }
+        
+        // Get the observed score of a given position (from nearest grid point)
+        double getObservedScore(const Eigen::Vector2d& pos) {
+            int ix = std::min(std::max(int((pos(0)/maxX)*gridSizeX), 0), gridSizeX - 1);
+            int iy = std::min(std::max(int((pos(1)/maxY)*gridSizeY), 0), gridSizeY - 1);
+            return observedGrid[ix][iy];
+        }
+
+        // Check whether the component (or target) is observed in a defined cone infront of the observer
+        bool observed(const Eigen::Vector2d& position, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fovCosine, double range) {
 
             double dx = position(0) - observerPosition(0);
             double dy = position(1) - observerPosition(1);
@@ -77,13 +123,18 @@ class GaussianMixtureFilter {
             return dot > sqrt(distanceSquared)*fovCosine;
         }
 
-        // Set the weights of any particles in the conical observable area to zero, otherwise one
-        void updateWeights(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, BaseCollisionChecker<Eigen::VectorXd>& checker, double fovCosine, double range) {
-            for (auto& p : particles) {
-                if (observed(p.position, observerPosition, observerHeading, fovCosine, range) && !checker.isCollide2P(Eigen::VectorXd(observerPosition), Eigen::VectorXd(p.position))) {
-                    p.weight = 0;
-                }
+        // Set the likelihood of any particles in the conical observable area low, otherwise one
+        double likelihood(const GaussianObject& g, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, BaseCollisionChecker<Eigen::VectorXd>& checker, double fovCosine, double range) {
+            if (observed(g.position, observerPosition, observerHeading, fovCosine, range) && !checker.isCollide2P(Eigen::VectorXd(observerPosition), Eigen::VectorXd(g.position))) {
+
+                double mahalanobisDistance = (g.position - observerPosition).transpose()*g.covariance.inverse()*(g.position - observerPosition);
+
+                // Apply negative information
+                double probabilityDetected = std::exp(-0.5*mahalanobisDistance);
+                return std::max(1.0 - 0.7*probabilityDetected, 0.05); // minimum likelihood at 0.05 if observed, maximum 0.3 seems to work
             }
+
+            return 1.0;
         }
 
         // Check whether the target is observed in the conical observable area
@@ -100,37 +151,75 @@ class GaussianMixtureFilter {
         void normalize() {
             double sum = 0.0;
             
-            for (auto& p : particles) sum += p.weight;
+            for (auto& p : components) sum += p.weight;
 
             if (sum == 0.0) {
-                double uniformWeight = 1.0/particles.size();
-                for (auto& p : particles) p.weight = uniformWeight;
+                double uniformWeight = 1.0/components.size();
+                for (auto& p : components) p.weight = uniformWeight;
                 return;
             }
 
-            for (auto& p : particles) p.weight /= sum;
+            for (auto& p : components) p.weight /= sum;
         }
 
-        // Finds the position of the combined highest weight and most unobserved particle
-        Eigen::Vector2d estimate() {
-            double maxScore = 0.0;
-            Eigen::Vector2d bestParticlePosition;
+        // Execute a random walk of distance 0.1 in a random direction (provided there are no obstacles)
+        // Serves to update the state of the true target
+        void propagate(Eigen::Vector2d& position, Point2DCollisionChecker& checker, double stepSize) {
+            for (int i = 0; i < maxPropogationAttempts; i++) {
+                double movementAngle = angleDist(gen);
+                Eigen::Vector2d step(stepSize*cos(movementAngle), stepSize*sin(movementAngle));
+                Eigen::Vector2d newPos = position + step;
 
-            for (auto& p : particles) {
+                if ((!checker.isCollide(newPos)) && (newPos(0) > 0 && newPos(0) < maxX) && (newPos(1) > 0 && newPos(1) < maxY)) {
+                    position = newPos;
+                    return;
+                }
+            }
+        }
+
+        // Finds the position of the combined highest weight and most unobserved component
+        Eigen::Vector2d estimate(Point2DCollisionChecker& checker) {
+            double maxScore = 0.0;
+            Eigen::Vector2d bestComponentPosition;
+
+            for (auto& p : components) {
                 double observedScore = getObservedScore(p.position);
                 double score = p.weight*exp(-observedScore) + 0.5*exp(-observedScore);
 
                 if (score > maxScore) {
                     maxScore = score;
-                    bestParticlePosition = p.position;
+                    bestComponentPosition = p.position;
                 }
             }
 
-            return bestParticlePosition;
+            // Compared to the particle filter, produced a very jumpy estimate, so apply smoothing
+            const double alpha = 0.15; // smoothing factor
+
+            if (!hasSmoothedEstimate) {
+                smoothedEstimate = bestComponentPosition;
+                hasSmoothedEstimate = true;
+            }
+            else {
+                Eigen::Vector2d candidate = (1.0 - alpha)*smoothedEstimate + alpha*bestComponentPosition;
+
+                // If the candidate is valid, use it
+                if (!checker.isCollide(candidate)) {
+                    smoothedEstimate = candidate;
+                }
+                else {
+                    // If not valid, move toward bestComponent instead
+                    smoothedEstimate = projectToFreeSpace(bestComponentPosition, checker);
+                }
+            }
+
+            return smoothedEstimate;
         }
 
+        // Finds the highest density grid cell (in terms of number of components), as long as it is not highly observed
         std::pair<double, Eigen::Vector2d> estimate_density(Point2DCollisionChecker& checker) {
-            // Reset density grid
+            const int radius = 3;
+
+            // Reset grids
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
                     densityGrid[i][j] = 0.0;
@@ -138,72 +227,103 @@ class GaussianMixtureFilter {
                 }
             }
 
-            // Add particle weights to density grid
-            for (auto& p : particles) {
+            // Add component weights to density grid
+            for (auto& p : components) {
                 int ix = std::min(std::max(int((p.position(0)/maxX)*gridSizeX), 0), gridSizeX - 1);
                 int iy = std::min(std::max(int((p.position(1)/maxY)*gridSizeY), 0), gridSizeY - 1);
                 densityGrid[ix][iy] += p.weight;
             }
 
-            // Add surrounding cells to density grid to create a smoother estimate
+            // Calculate the number of cells in the circular area
+            int cellCount = 0;
+            for (int di = -radius; di <= radius; di++) {
+                for (int dj = -radius; dj <= radius; dj++) {
+                    if (di*di + dj*dj <= radius*radius) {
+                        cellCount++;
+                    }
+                }
+            }
+
+            double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
+            double area = cellCount*cellArea;
+
+            // Circular smoothing of density
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
-                    for (int di = -1; di <= 1; di++) {
-                        for (int dj = -10; dj <= 10; dj++) {
+
+                    double weightedSum = 0.0;
+
+                    for (int di = -radius; di <= radius; di++) {
+                        for (int dj = -radius; dj <= radius; dj++) {
+
+                            // Circular mask
+                            if (di*di + dj*dj > radius*radius) continue;
                             int ni = i + di;
                             int nj = j + dj;
+
                             if (ni >= 0 && ni < gridSizeX && nj >= 0 && nj < gridSizeY) {
-                                surroundingDensityGrid[i][j] += densityGrid[ni][nj];
+                                double obsPenalty = std::exp(-observedGrid[ni][nj]);
+                                weightedSum += densityGrid[ni][nj] * obsPenalty;
                             }
                         }
                     }
+
+                    surroundingDensityGrid[i][j] = weightedSum;
                 }
             }
 
             // Find cell with highest density
             double maxDensity = 0.0;
-            Eigen::Vector2d bestParticlePosition;
-            Eigen::Vector2d tempBestParticlePosition;
-
+            Eigen::Vector2d bestComponentPosition;
 
             for (int i = 0; i < gridSizeX; i++) {
                 for (int j = 0; j < gridSizeY; j++) {
-                    if (surroundingDensityGrid[i][j] > maxDensity) {
-                        tempBestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-                        if (checker.isCollide(tempBestParticlePosition)) continue; // Skip if cell is in an obstacle   
+                    if (surroundingDensityGrid[i][j] <= maxDensity) continue;
 
-                        maxDensity = surroundingDensityGrid[i][j];
-                        bestParticlePosition = Eigen::Vector2d((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
-                    }
+                    Eigen::Vector2d pos((i + 0.5)*maxX/static_cast<double>(gridSizeX), (j + 0.5)*maxY/static_cast<double>(gridSizeY));
+                    if (checker.isCollide(pos)) continue;
+
+                    maxDensity = surroundingDensityGrid[i][j];
+                    bestComponentPosition = pos;
                 }
             }
 
-            return {maxDensity*gridSizeX*gridSizeY/(10*10), bestParticlePosition};
+            // Convert density to weight per unit area
+            double densityPerArea = maxDensity/area;
+            return {densityPerArea, bestComponentPosition};
         }
 
-        void predict(Eigen::Matrix2d randWalkCov, Point2DCollisionChecker& checker) {
-            for (size_t i = 0; i < gmObjects.size(); i++) {
-                updatedgmObjects[i] = gmObjects[i];
+        // Linear GSF prediction step
+        void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker, double stepSize) {
+            updatedComponents = components;
+            
+            for (size_t i = 0; i < components.size(); i++) {
 
-                // update covariance base on random walk
-                updatedgmObjects[i].covariance += randWalkCov; // Add some process noise
+                // update covariance based on random walk
+                updatedComponents[i].covariance += randWalkCov; // Add some process noise
+
+                std::normal_distribution<double> normalDist(0.0, stepSize);
 
                 
-                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collition_sagments = checker.isCollideEllipse(gmObjects[i].position, gmObjects[i].covariance, 0.95);
+                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(components[i].position, components[i].covariance, 0.95);
                 
                 // If the predicted Gaussian intersects with an obstacle, seperate into two Gaussians and keep the one that is not colliding
-                for (const auto& seg : collition_sagments) {
+                for (const auto& seg : collision_segments) {
                     // Get the line segment in the form a^T x = b
                     Eigen::Vector2d d = seg.second - seg.first;
-                    Eigen::Vector2d a(-d(1), d(0));   // normal vector
+                    Eigen::Vector2d a(-d(1), d(0)); // normal vector
                     double b = a.dot(seg.first);
 
                     // Use the current updated Gaussian, not always the original one
-                    Eigen::Vector2d mu = updatedgmObjects[i].position;
+                    Eigen::Vector2d mu = updatedComponents[i].position;
 
                     if (a.dot(mu) > b) continue; // If the mean is on the left side of the line, then we are good and can skip to the next segment
 
-                    Eigen::Matrix2d Sigma = updatedgmObjects[i].covariance;
+                    Eigen::Matrix2d Sigma = updatedComponents[i].covariance;
+
+                    // Ensure updated components do not move outside the environment
+                    updatedComponents[i].position(0) = std::clamp(updatedComponents[i].position(0), 0.0, maxX);
+                    updatedComponents[i].position(1) = std::clamp(updatedComponents[i].position(1), 0.0, maxY);
 
                     double m = a.dot(mu);
                     double s2 = a.transpose() * Sigma * a;
@@ -217,29 +337,217 @@ class GaussianMixtureFilter {
                     // Left-side truncation: a^T x <= b
                     double lambda = pdf_alpha / cdf_alpha;
 
-                    updatedgmObjects[i].position =
+                    updatedComponents[i].position =
                         mu - lambda * (Sigma * a) / s;
 
-                    updatedgmObjects[i].covariance =
+                    updatedComponents[i].covariance =
                         Sigma - (alpha * lambda + lambda * lambda)
                         * (Sigma * a) * (a.transpose() * Sigma) / s2;
                 }
 
+                // Propogate random walk dynamics
+                Eigen::Vector2d newPos;
+                bool valid = false;
+
+                for (int k = 0; k < 20; k++) {
+                    Eigen::Vector2d noise;
+                    noise << normalDist(gen), normalDist(gen);
+
+                    newPos = components[i].position + noise;
+
+                    if (!checker.isCollide(newPos)) {
+                        valid = true;
+                        break;
+                    }
+                }
+
+                // Check that new component positions are valid
+                if (valid) {
+                    updatedComponents[i].position = newPos;
+                } else {
+                    // Keep old position as a fallback
+                    updatedComponents[i].position = components[i].position;
+                }
+
             }
+
+            components = updatedComponents;
 
         }
 
-        // Performs a Sequential Importance Sampling (SIS) Particle Filter step
-        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fovCosine, double range, Eigen::Matrix2d randWalkCov, double resampleThreshold) {
+        // Linear GSF measurement step
+        void measurementStep(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, BaseCollisionChecker<Eigen::VectorXd>& checker, double fovCosine, double range) {
 
-            // Prediction step: 
-            predict(randWalkCov, checker);
+            for (auto& g : components) {
+                g.weight *= likelihood(g, observerPosition, observerHeading, checker, fovCosine, range);
+            }
+        }
 
-            // Propogate particles
-            propagateAll(checker, stepSize);
+        // Find nearest free position for a position which has collided with an obstacle
+        Eigen::Vector2d projectToFreeSpace(const Eigen::Vector2d& pos, Point2DCollisionChecker& checker) {
+            if (!checker.isCollide(pos)) return pos;
 
-            // Update weights
-            updateWeights(observerPosition, observerHeading, lineOfSightChecker, fovCosine, range);
+            const double step = 0.05; // search resolution
+            const double maxRadius = maxX/5; // search limit
+
+            // Search for open positions
+            for (double r = step; r <= maxRadius; r += step) {
+                for (double theta = 0; theta < 2*M_PI; theta += M_PI/16.0) {
+                    Eigen::Vector2d candidate = pos + r*Eigen::Vector2d(std::cos(theta), std::sin(theta));
+
+                    if (!checker.isCollide(candidate) && candidate(0) >= 0 && candidate(0) <= maxX && candidate(1) >= 0 && candidate(1) <= maxY) {
+                        return candidate;
+                    }
+                }
+            }
+
+            // Random valid point as a backup
+            Eigen::Vector2d fallback;
+            do {
+                fallback = {distX(gen), distY(gen)};
+            } while (checker.isCollide(fallback));
+
+            return fallback;
+        }
+
+        // I tried this method which was in the slides but something is wrong with it and I am not sure what, it breaks the spread of components throughout the environment
+        // Merge mixand pairs that are the most statistically similar using a pseudo Mahalabobis distance
+        // void mergeComponents(double mahalanobisThreshold) {
+        //     std::vector<bool> merged(components.size(), false);
+        //     std::vector<GaussianObject> newComponents;
+
+        //     for (size_t i = 0; i < components.size(); i++) {
+        //         if (merged[i]) continue;
+
+        //         GaussianObject g = components[i];
+
+        //         for (size_t j = i+1; j < components.size(); j++) {
+        //             if (merged[j]) continue;
+
+        //             const auto& gComparison = components[j];
+
+        //             // Position difference between mixands
+        //             Eigen::Vector2d posDifference = g.position - gComparison.position;
+
+        //             // Combined covariance
+        //             Eigen::Matrix2d covCombined = g.covariance + gComparison.covariance;
+
+        //             // Clamp eigenvalues
+        //             Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(covCombined);
+        //             Eigen::Vector2d evals = solver.eigenvalues().cwiseMax(1e-2).cwiseMin(1.0);
+        //             covCombined = solver.eigenvectors() * evals.asDiagonal() * solver.eigenvectors().transpose();
+
+        //             // Regularization
+        //             covCombined += 1e-6*Eigen::Matrix2d::Identity();
+
+        //             double mahalanobisDist = posDifference.transpose()*covCombined.inverse()*posDifference;
+
+        //             // If mixands are similar, merge them into one component
+        //             if (mahalanobisDist < mahalanobisThreshold) {
+        //                 double weight1 = g.weight;
+        //                 double weight2 = gComparison.weight;
+
+        //                 // Merge mean and covariance
+        //                 Eigen::Vector2d newPosition = (weight1*g.position + weight2*gComparison.position)/weightSum;
+        //                 Eigen::Matrix2d newCovariance = (weight1*(g.covariance + (g.position - newPosition)*(g.position - newPosition).transpose()) + weight2*(gComparison.covariance + (gComparison.position - newPosition)*(gComparison.position - newPosition).transpose()))/weightSum;
+
+        //                 g.position = newPosition;
+        //                 g.covariance = newCovariance;
+        //                 g.weight = weight1 + weight2;
+
+        //                 merged[j] = true;
+        //             }
+        //         }
+
+        //         newComponents.push_back(g);
+        //     }
+
+        //     components = newComponents;
+        // }
+
+        // Merge gaussian components if their means are close together
+        void mergeComponents(double distThresh) {
+            std::vector<bool> merged(components.size(), false);
+            std::vector<GaussianObject> newComponents;
+
+            for (size_t i = 0; i < components.size(); i++) {
+                if (merged[i]) continue;
+
+                GaussianObject g = components[i];
+
+                for (size_t j = i+1; j < components.size(); j++) {
+                    if (merged[j]) continue;
+
+                    // If mixands are similar, merge them into one component
+                    if ((components[i].position - components[j].position).norm() < distThresh) {
+                        double weight1 = g.weight;
+                        double weight2 = components[j].weight;
+
+                        // Merge mean and covariance
+                        g.position = (weight1*g.position + weight2*components[j].position)/(weight1 + weight2);
+                        g.covariance = (weight1*g.covariance + weight2*components[j].covariance)/(weight1 + weight2);
+                        g.weight = weight1 + weight2;
+
+                        merged[j] = true;
+                    }
+                }
+
+                newComponents.push_back(g);
+            }
+
+            components = newComponents;
+        }
+
+        // Generate a random position jitter so split components will not be identical
+        Eigen::Vector2d jitterNoise() {
+            static std::normal_distribution<double> dist(0.0, 0.1);
+            return Eigen::Vector2d(dist(gen), dist(gen));
+        }
+
+        // Split components when the number of components drops below the number of expected components
+        void splitComponents(size_t targetNumComponents, Point2DCollisionChecker& checker) {
+            while (components.size() < targetNumComponents) {
+
+                // Find highest weight component
+                auto maxComponent = std::max_element(components.begin(), components.end(), [](const GaussianObject& comp1, const GaussianObject& comp2) { return comp1.weight < comp2.weight; });
+                GaussianObject g = *maxComponent;
+
+                // Find the largest eigenvector and spread
+                Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(g.covariance);
+                Eigen::Vector2d direction = solver.eigenvectors().col(1); // largest eigenvector
+                double spread = std::sqrt(solver.eigenvalues()(1));
+
+                // Create new component objects
+                GaussianObject g1 = g;
+                GaussianObject g2 = g;
+
+                // Generate new positions with jitter, weights, and covariances
+                Eigen::Vector2d noise = jitterNoise();
+                g1.position += 0.5*spread*direction + noise;
+                g2.position -= 0.5*spread*direction - noise;
+                g1.position = projectToFreeSpace(g1.position, checker);
+                g2.position = projectToFreeSpace(g2.position, checker);
+
+                g1.weight = g.weight*0.5;
+                g2.weight = g.weight*0.5;
+
+                g1.covariance *= 0.8;
+                g2.covariance *= 0.8;
+
+                // Replace the original component
+                *maxComponent = g1;
+                components.push_back(g2);
+            }
+        }
+
+        // Performs a Linear Gaussian Sum Filter step
+        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov, double stepSize) {
+
+            // Prediction step 
+            predictionStep(randWalkCov, checker, stepSize);
+
+            // Measurement step
+            measurementStep(observerPosition, observerHeading, lineOfSightChecker, fovCosine, range);
 
             // Update spatial memory
             updateObservedGrid(observerPosition, observerHeading, lineOfSightChecker, fovCosine, range);
@@ -247,25 +555,129 @@ class GaussianMixtureFilter {
             // Normalize
             normalize();
 
-            // Compute Ness
-            double Ness = computeNess();
+            // Re-seed low weight components into free, unobserved, grid cells
+            std::vector<double> cellWeights;
+            std::vector<std::pair<int,int>> cells;
+            cellWeights.reserve(gridSizeX*gridSizeY);
+            cells.reserve(gridSizeX*gridSizeY);
 
-            // Resample and add jitter
-            if (Ness < resampleThreshold*Ns) {
-                resample();
+            for (int i = 0; i < gridSizeX; i++) {
+                for (int j = 0; j < gridSizeY; j++) {
+
+                    double weight = std::exp(-observedGrid[i][j]);
+                    Eigen::Vector2d pos((i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY);
+
+                    // Avoid obstacles
+                    if (checker.isCollide(pos)) continue;
+
+                    cellWeights.push_back(weight);
+                    cells.emplace_back(i,j);
+                }
+            }
+
+            std::discrete_distribution<int> cellDist(cellWeights.begin(), cellWeights.end());
+
+            // Weight threshold to prune
+            const double pruneThresh = 1e-3;
+
+            for (auto& g : components) {
+                if (g.weight < pruneThresh) {
+
+                    int cellIndex = cellDist(gen);
+                    auto [i, j] = cells[cellIndex];
+
+                    do {
+                        // Add jitter inside the cell
+                        double dx = (double)gen()/gen.max();
+                        double dy = (double)gen()/gen.max();
+
+                        g.position = Eigen::Vector2d((i + dx)*maxX/gridSizeX, (j + dy)*maxY/gridSizeY);
+                    } while (checker.isCollide(g.position));
+
+                    // Reset covariance
+                    g.covariance = Eigen::Matrix2d::Identity()*1.0;
+
+                    // Give uniform small weight
+                    g.weight = 1.0/M;
+                }
+            }
+
+            // Spatial hashing grid for component repulsion
+            const double cellSize = 0.3;
+            std::unordered_map<int, std::vector<int>> grid;
+
+            // Random hash function
+            auto hash = [&](const Eigen::Vector2d& p) {
+                int x = int(p(0)/cellSize);
+                int y = int(p(1)/cellSize);
+                return x*73856093^y*19349663;
+            };
+
+            // Build the grid
+            for (size_t i = 0; i < components.size(); i++) {
+                grid[hash(components[i].position)].push_back(i);
+            }
+
+            // Create repulsion between neighbouring components if they are too close
+            for (auto& [key, indices] : grid) {
+                for (int i : indices) {
+                    for (int j : indices) {
+                        if (i >= j) continue;
+
+                        Eigen::Vector2d diff = components[i].position - components[j].position;
+                        double dist = diff.norm();
+
+                        if (dist < 0.3) {
+                            Eigen::Vector2d push = 0.05*diff.normalized();
+                            components[i].position += push;
+                            components[j].position -= push;
+                        }
+                    }
+                }
+            }
+
+            // Maintain the number of components
+            size_t target = M;
+
+            // Merge components
+            mergeComponents(0.5);
+
+            // If too many components, prune the lowest weights
+            if (components.size() > target) {
+                std::sort(components.begin(), components.end(), [](const GaussianObject& comp1, const GaussianObject& comp2) { return comp1.weight > comp2.weight; });
+                components.resize(target);
+            }
+
+            // If too few components, split them up
+            while (components.size() < target) {
+                splitComponents(target, checker);
+            }
+
+            // Normalize again
+            normalize();
+
+            // Final check that the components are in open areas
+            for (auto& g : components) {
+                g.position = projectToFreeSpace(g.position, checker);
             }
         }
 
     private:
-        int Ns;
+        int M;
         std::mt19937 gen;
         std::uniform_real_distribution<double> angleDist;
         int gridSizeX;
         int gridSizeY;
+        int maxPropogationAttempts;
+        double maxObservedScore;
+        double observedDecayRate;
+        std::vector<std::vector<double>> observedGrid;
         double maxX;
         double maxY;
         std::uniform_real_distribution<double> distX;
         std::uniform_real_distribution<double> distY;
         std::vector<std::vector<double>> densityGrid;
         std::vector<std::vector<double>> surroundingDensityGrid;
+        Eigen::Vector2d smoothedEstimate;
+        bool hasSmoothedEstimate = false;
 };

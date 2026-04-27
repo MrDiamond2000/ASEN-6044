@@ -8,7 +8,7 @@ pathPlanner:
   stepSize: 0.2
 
 Filter:
-  Ns: 1000
+  M: 1000
   stepSize: 0.15
   resampleThreshold: 0.75
   gridSizeX: 50
@@ -16,8 +16,8 @@ Filter:
   maxPropogationAttempts: 20
   maxObservedScore: 10
   observedDecayRate: 0.995
-  densityThreshold: 0.03
-  densityThresholdReset: 0.016
+  densityThreshold: 0.026
+  densityThresholdReset: 0.026
 
 vehicle:
   vehicleInitialX: 1.0
@@ -30,4 +30,4 @@ sensor:
 
 misc:
   maxIterations: 2000
-  outputFile: "output_pf.csv"
+  outputFile: "output_gm.csv"
