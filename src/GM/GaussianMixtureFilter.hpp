@@ -432,7 +432,7 @@ class GaussianMixtureFilter {
 
         void choppedGaussian(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
             // Get the line segment in the form a^T x = b
-            Eigen::Vector2d d = seg.first - seg.second;
+            Eigen::Vector2d d = seg.second - seg.first;
             Eigen::Vector2d a(-d(1), d(0)); // normal vector
             double b = a.dot(seg.second);
 
@@ -460,7 +460,7 @@ class GaussianMixtureFilter {
 
         GaussianObject choppedGaussianAndWeight(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
             // Get the line segment in the form a^T x = b
-            Eigen::Vector2d d = seg.first - seg.second;
+            Eigen::Vector2d d = seg.second - seg.first;
             Eigen::Vector2d a(-d(1), d(0)); // normal vector
             double b = a.dot(seg.second);
 
@@ -592,6 +592,7 @@ class GaussianMixtureFilter {
             std::vector<Eigen::Vector2d> fovVertices = {observerPosition, rightFOVPoint, leftFOVPoint};
 
             path_planning::Environment2D env = checker.getEnvironment();
+            env.obstacles.clear(); // Clear existing obstacles to only consider FOV polygon for collision checking in this step
             path_planning::Obstacle2D fovPolygon(fovVertices);
             env.obstacles.push_back(fovPolygon);
 
@@ -787,111 +788,111 @@ class GaussianMixtureFilter {
             // Normalize
             normalize();
 
-            // Re-seed low weight components into free, unobserved, grid cells
-            std::vector<double> cellWeights;
-            std::vector<std::pair<int,int>> cells;
-            cellWeights.reserve(gridSizeX*gridSizeY);
-            cells.reserve(gridSizeX*gridSizeY);
+            // // Re-seed low weight components into free, unobserved, grid cells
+            // std::vector<double> cellWeights;
+            // std::vector<std::pair<int,int>> cells;
+            // cellWeights.reserve(gridSizeX*gridSizeY);
+            // cells.reserve(gridSizeX*gridSizeY);
 
-            for (int i = 0; i < gridSizeX; i++) {
-                for (int j = 0; j < gridSizeY; j++) {
+            // for (int i = 0; i < gridSizeX; i++) {
+            //     for (int j = 0; j < gridSizeY; j++) {
 
-                    double weight = std::exp(-observedGrid[i][j]);
-                    Eigen::Vector2d pos((i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY);
+            //         double weight = std::exp(-observedGrid[i][j]);
+            //         Eigen::Vector2d pos((i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY);
 
-                    // Avoid obstacles
-                    if (checker.isCollide(pos)) continue;
+            //         // Avoid obstacles
+            //         if (checker.isCollide(pos)) continue;
 
-                    cellWeights.push_back(weight);
-                    cells.emplace_back(i,j);
-                }
-            }
+            //         cellWeights.push_back(weight);
+            //         cells.emplace_back(i,j);
+            //     }
+            // }
 
-            std::discrete_distribution<int> cellDist(cellWeights.begin(), cellWeights.end());
+            // std::discrete_distribution<int> cellDist(cellWeights.begin(), cellWeights.end());
 
-            // Weight threshold to prune
-            const double pruneThresh = 1e-3;
+            // // Weight threshold to prune
+            // const double pruneThresh = 1e-3;
 
-            for (auto& g : components) {
-                if (g.weight < pruneThresh) {
+            // for (auto& g : components) {
+            //     if (g.weight < pruneThresh) {
 
-                    int cellIndex = cellDist(gen);
-                    auto [i, j] = cells[cellIndex];
+            //         int cellIndex = cellDist(gen);
+            //         auto [i, j] = cells[cellIndex];
 
-                    do {
-                        // Add jitter inside the cell
-                        double dx = (double)gen()/gen.max();
-                        double dy = (double)gen()/gen.max();
+            //         do {
+            //             // Add jitter inside the cell
+            //             double dx = (double)gen()/gen.max();
+            //             double dy = (double)gen()/gen.max();
 
-                        g.position = Eigen::Vector2d((i + dx)*maxX/gridSizeX, (j + dy)*maxY/gridSizeY);
-                    } while (checker.isCollide(g.position));
+            //             g.position = Eigen::Vector2d((i + dx)*maxX/gridSizeX, (j + dy)*maxY/gridSizeY);
+            //         } while (checker.isCollide(g.position));
 
-                    // Reset covariance
-                    g.covariance = Eigen::Matrix2d::Identity()*1.0;
+            //         // Reset covariance
+            //         g.covariance = Eigen::Matrix2d::Identity()*1.0;
 
-                    // Give uniform small weight
-                    g.weight = 1.0/M;
-                }
-            }
+            //         // Give uniform small weight
+            //         g.weight = 1.0/M;
+            //     }
+            // }
 
-            // Spatial hashing grid for component repulsion
-            const double cellSize = 0.3;
-            std::unordered_map<int, std::vector<int>> grid;
+            // // Spatial hashing grid for component repulsion
+            // const double cellSize = 0.3;
+            // std::unordered_map<int, std::vector<int>> grid;
 
-            // Random hash function
-            auto hash = [&](const Eigen::Vector2d& p) {
-                int x = int(p(0)/cellSize);
-                int y = int(p(1)/cellSize);
-                return x*73856093^y*19349663;
-            };
+            // // Random hash function
+            // auto hash = [&](const Eigen::Vector2d& p) {
+            //     int x = int(p(0)/cellSize);
+            //     int y = int(p(1)/cellSize);
+            //     return x*73856093^y*19349663;
+            // };
 
-            // Build the grid
-            for (size_t i = 0; i < components.size(); i++) {
-                grid[hash(components[i].position)].push_back(i);
-            }
+            // // Build the grid
+            // for (size_t i = 0; i < components.size(); i++) {
+            //     grid[hash(components[i].position)].push_back(i);
+            // }
 
-            // Create repulsion between neighbouring components if they are too close
-            for (auto& [key, indices] : grid) {
-                for (int i : indices) {
-                    for (int j : indices) {
-                        if (i >= j) continue;
+            // // Create repulsion between neighbouring components if they are too close
+            // for (auto& [key, indices] : grid) {
+            //     for (int i : indices) {
+            //         for (int j : indices) {
+            //             if (i >= j) continue;
 
-                        Eigen::Vector2d diff = components[i].position - components[j].position;
-                        double dist = diff.norm();
+            //             Eigen::Vector2d diff = components[i].position - components[j].position;
+            //             double dist = diff.norm();
 
-                        if (dist < 0.3) {
-                            Eigen::Vector2d push = 0.05*diff.normalized();
-                            components[i].position += push;
-                            components[j].position -= push;
-                        }
-                    }
-                }
-            }
+            //             if (dist < 0.3) {
+            //                 Eigen::Vector2d push = 0.05*diff.normalized();
+            //                 components[i].position += push;
+            //                 components[j].position -= push;
+            //             }
+            //         }
+            //     }
+            // }
 
-            // Maintain the number of components
-            size_t target = M;
+            // // Maintain the number of components
+            // size_t target = M;
 
-            // Merge components
-            mergeComponents(0.5);
+            // // Merge components
+            // mergeComponents(0.5);
 
-            // If too many components, prune the lowest weights
-            if (components.size() > target) {
-                std::sort(components.begin(), components.end(), [](const GaussianObject& comp1, const GaussianObject& comp2) { return comp1.weight > comp2.weight; });
-                components.resize(target);
-            }
+            // // If too many components, prune the lowest weights
+            // if (components.size() > target) {
+            //     std::sort(components.begin(), components.end(), [](const GaussianObject& comp1, const GaussianObject& comp2) { return comp1.weight > comp2.weight; });
+            //     components.resize(target);
+            // }
 
-            // If too few components, split them up
-            while (components.size() < target) {
-                splitComponents(target, checker);
-            }
+            // // If too few components, split them up
+            // while (components.size() < target) {
+            //     splitComponents(target, checker);
+            // }
 
-            // Normalize again
-            normalize();
+            // // Normalize again
+            // normalize();
 
-            // Final check that the components are in open areas
-            for (auto& g : components) {
-                g.position = projectToFreeSpace(g.position, checker);
-            }
+            // // Final check that the components are in open areas
+            // for (auto& g : components) {
+            //     g.position = projectToFreeSpace(g.position, checker);
+            // }
         }
 
     private:

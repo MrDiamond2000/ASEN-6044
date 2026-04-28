@@ -155,8 +155,8 @@ def updateFrame(frameIndex):
 
     # Define the number of covariance ellipses to plot, at most 5
     numEllipses = min(5, len(weights))
-    # componentIndices = np.argsort(weights)[-numEllipses:]
-    componentIndices = [6,7,8,9,10]
+    componentIndices = np.argsort(weights)[-numEllipses:]
+    # componentIndices = [6,7,8,9,10]
 
     # Delete old ellipses
     for patch in list(ax.patches):
