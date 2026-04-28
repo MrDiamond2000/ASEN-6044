@@ -312,7 +312,7 @@ class GaussianMixtureFilter {
 
             // Sample from the gaussian mixture
             std::vector<Eigen::Vector2d> samples;
-            samples.reserve(M);
+            samples.reserve(10*M);
 
             std::normal_distribution<double> normal(0.0, 1.0);
 
@@ -355,17 +355,17 @@ class GaussianMixtureFilter {
             const int radius = 3;
 
             // Count circular cells
-            int cellCount = 0;
-            for (int di = -radius; di <= radius; di++) {
-                for (int dj = -radius; dj <= radius; dj++) {
-                    if (di*di + dj*dj <= radius*radius) {
-                        cellCount++;
-                    }
-                }
-            }
+            // int cellCount = 0;
+            // for (int di = -radius; di <= radius; di++) {
+            //     for (int dj = -radius; dj <= radius; dj++) {
+            //         if (di*di + dj*dj <= radius*radius) {
+            //             cellCount++;
+            //         }
+            //     }
+            // }
 
-            double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
-            double area = cellCount * cellArea;
+            //double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
+            //double area = cellCount * cellArea;
 
             // Circular density smoothing based on grid cells within the defined radius
             for (int i = 0; i < gridSizeX; i++) {
@@ -410,7 +410,7 @@ class GaussianMixtureFilter {
             }
 
             // Smooth the density estimate so it doesn't move locations as quickly
-            const double alpha = 0.2;
+            const double alpha = 0.05;
 
             if (!hasSmoothedEstimate) {
                 smoothedEstimate = highestDensityPosition;
@@ -501,7 +501,7 @@ class GaussianMixtureFilter {
         }
 
         // Linear GSF prediction step
-        void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker, double stepSize) {
+        void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker) {
             updatedComponents = components;
             
             for (size_t i = 0; i < components.size(); i++) {
@@ -584,17 +584,61 @@ class GaussianMixtureFilter {
             components = updatedComponents;
 
         }
+        std::vector<path_planning::Obstacle2D> getFOVObstacle(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, Point2DCollisionChecker& checker, double fov, double range) {
+            // create point within FOV and check if that collid from center out. Then use the out most point to create obstacle
+            
+            double startAngle = std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0;
+            size_t numAngleSegments = 10; // Number of segments to discretize the FOV into
+            double angleInterval = fov/numAngleSegments; // 10 segments in the FOV, can be adjusted for more accuracy at the cost of computation time
+            
+            size_t numRangeSegments = 20; // Number of segments to discretize the range into
+            double rangeInterval = range/numRangeSegments;
+
+            std::vector<size_t> collision_points; // Store the indices of the angle and range segments where collisions occur
+            for (size_t i = 0; i < numAngleSegments+1; i++) {
+                double angle = startAngle + i*angleInterval;
+
+                for (size_t j = 1; j < numRangeSegments+1; j++) {
+                    if (j == numRangeSegments) {
+                        collision_points.push_back(j);
+                        break;
+                    }
+
+                    double r = j*rangeInterval;
+                    Eigen::Vector2d point = observerPosition + r*Eigen::Vector2d(std::cos(angle), std::sin(angle));
+
+                    if (checker.isCollide(point)) {
+                        collision_points.push_back(j);
+                        break; // Stop checking further along this angle segment after the first collision
+                    }
+                }
+            }
+
+            std::vector<path_planning::Obstacle2D> fovObstacles;
+            for (size_t i = 0; i < numAngleSegments; i++) {
+                double angle1 = startAngle + i*angleInterval;
+                double angle2 = startAngle + (i+1)*angleInterval;
+
+                double r = std::min(collision_points[i]*rangeInterval, collision_points[i+1]*rangeInterval);
+                Eigen::Vector2d point1 = observerPosition + r*Eigen::Vector2d(std::cos(angle1), std::sin(angle1));
+                Eigen::Vector2d point2 = observerPosition + r*Eigen::Vector2d(std::cos(angle2), std::sin(angle2));
+                std::vector<Eigen::Vector2d> fovVertices = {observerPosition, point1, point2};
+                fovObstacles.push_back(fovVertices);
+            }
+
+            return fovObstacles;
+        }
 
         // Linear GSF measurement step
         void measurementStep(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, Point2DCollisionChecker& checker, double fov, double range) {
-            Eigen::Vector2d leftFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0));
-            Eigen::Vector2d rightFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0));
-            std::vector<Eigen::Vector2d> fovVertices = {observerPosition, rightFOVPoint, leftFOVPoint};
+            // Eigen::Vector2d leftFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0));
+            // Eigen::Vector2d rightFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0));
+            // std::vector<Eigen::Vector2d> fovVertices = {observerPosition, rightFOVPoint, leftFOVPoint};
 
             path_planning::Environment2D env = checker.getEnvironment();
             env.obstacles.clear(); // Clear existing obstacles to only consider FOV polygon for collision checking in this step
-            path_planning::Obstacle2D fovPolygon(fovVertices);
-            env.obstacles.push_back(fovPolygon);
+            
+            env.obstacles = getFOVObstacle(observerPosition, observerHeading, checker, fov, range); // Get the FOV polygon as an obstacle
 
             Point2DCollisionChecker temp_checker(env); // Create a temporary collision checker with the FOV polygon as an obstacle to check whether components are in the FOV, without modifying the original collision checker which is needed for other checks in the filter. Could be optimized by just adding and removing the FOV polygon from the original checker each step, but this is simpler to implement and debug for now. Just make sure not to use the original checker for any checks that need to consider the FOV as an obstacle during the measurement step, and use
             for (auto& g : components) {
@@ -774,10 +818,10 @@ class GaussianMixtureFilter {
         }
 
         // Performs a Linear Gaussian Sum Filter step
-        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fov, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov, double stepSize) {
+        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fov, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov) {
 
             // Prediction step 
-            predictionStep(randWalkCov, checker, stepSize);
+            predictionStep(randWalkCov, checker);
 
             // Measurement step
             measurementStep(observerPosition, observerHeading, checker, fov, range);

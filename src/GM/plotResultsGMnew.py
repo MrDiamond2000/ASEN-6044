@@ -4,6 +4,17 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Polygon
 import yaml
 from matplotlib.patches import Ellipse
+import os
+import glob
+
+outputDirectory = "frames"
+
+# Create directory if necessary
+os.makedirs(outputDirectory, exist_ok=True)
+
+# Delete existing images
+for file in glob.glob(os.path.join(outputDirectory, "gm*.png")):
+    os.remove(file)
 
 # Define parameters from yaml file
 with open("src/GM/GaussianMixtureParams.yaml", "r") as file:
@@ -47,11 +58,23 @@ ax.set_ylabel("Y Position")
 
 # Create a heatmap for visualizing the observed grid
 observedGrid = np.zeros((gridSizeX, gridSizeY))
-heatMap = ax.imshow(observedGrid.T, extent=[0, maxX, 0, maxY], origin="lower", cmap="coolwarm", vmin=0, vmax=maxObservedScore, alpha=0.5, interpolation="nearest")
+gaussianDensityGrid = np.zeros((gridSizeY, gridSizeX))
 
-# Create a colorbar
+maxDensityScore = 0.1  # tune this value based on your data
+
+heatMap = ax.imshow(
+    gaussianDensityGrid,
+    extent=[0, maxX, 0, maxY],
+    origin="lower",
+    cmap="hot",
+    vmin=0,
+    vmax=maxDensityScore,
+    alpha=0.6,
+    interpolation="bilinear"
+)
+
 colorBar = plt.colorbar(heatMap, ax=ax)
-colorBar.set_label("Observed Score")
+colorBar.set_label("Gaussian Mixture Density")
 
 # Create obstacles in figure
 for obstacle in obstacles:
@@ -59,7 +82,7 @@ for obstacle in obstacles:
     ax.add_patch(shape)
 
 # Plot the components, agent, target, and filter estimate over time
-componentsPlot, = ax.plot([], [], ".", color="blue", markersize=2, label="Components")
+# componentsPlot, = ax.plot([], [], ".", color="blue", markersize=2, label="Components")
 agentPlot, = ax.plot([], [], "o", color="lime", markersize=10, label="Agent")
 targetPlot, = ax.plot([], [], "x", color="red", markersize=10, label="Target")
 estimatePlot, = ax.plot([], [], "*", color="lime", markersize=10, label="Estimate")
@@ -72,6 +95,53 @@ ax.add_patch(fovPatch)
 # Add a legend to the plot
 ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.05), ncol=3)
 plt.tight_layout()
+
+def gaussianMixtureHeatmap(positions, covariances, weights, maxX, maxY, gridSizeX, gridSizeY):
+    """
+    Evaluate all Gaussian mixture components on a 2D grid.
+
+    positions:    (N, 2)
+    covariances:  (N, 2, 2)
+    weights:      (N,)
+    returns:
+        X, Y: meshgrid positions
+        density: (gridSizeY, gridSizeX) heatmap array
+    """
+
+    # Grid cell centers
+    x = np.linspace(0, maxX, gridSizeX)
+    y = np.linspace(0, maxY, gridSizeY)
+    X, Y = np.meshgrid(x, y)
+
+    density = np.zeros_like(X)
+
+    for mean, cov, weight in zip(positions, covariances, weights):
+        # Make covariance symmetric for numerical safety
+        cov = 0.5 * (cov + cov.T)
+
+        # Avoid singular covariance matrices
+        cov += 1e-6 * np.eye(2)
+
+        invCov = np.linalg.inv(cov)
+        detCov = np.linalg.det(cov)
+
+        if detCov <= 0:
+            continue
+
+        dx = X - mean[0]
+        dy = Y - mean[1]
+
+        exponent = (
+            invCov[0, 0] * dx**2
+            + 2 * invCov[0, 1] * dx * dy
+            + invCov[1, 1] * dy**2
+        )
+
+        gaussianDensity = np.exp(-0.5 * exponent) / (2 * np.pi * np.sqrt(detCov))
+
+        density += weight * gaussianDensity
+
+    return X, Y, density
 
 # Checks if points are in counter clockwise order
 def counterClockwise(p1, p2, p3):
@@ -151,43 +221,67 @@ def updateFrame(frameIndex):
     targetPlot.set_data([target[0]], [target[1]])
     estimatePlot.set_data([estimate[0]], [estimate[1]])
     #densityEstimatePlot.set_data([estimate_density[0]], [estimate_density[1]])
-    componentsPlot.set_data(positions[:,0], positions[:,1])
+    # componentsPlot.set_data(positions[:,0], positions[:,1])
 
-    # Define the number of covariance ellipses to plot, at most 5
-    numEllipses = min(5, len(weights))
-    componentIndices = np.argsort(weights)[-numEllipses:]
-    # componentIndices = [6,7,8,9,10]
+    # # Define the number of covariance ellipses to plot, at most 5
+    # numEllipses = min(5, len(weights))
+    # componentIndices = np.argsort(weights)[-numEllipses:]
+    # # componentIndices = [6,7,8,9,10]
 
-    # Delete old ellipses
-    for patch in list(ax.patches):
-        if isinstance(patch, Ellipse):
-            patch.remove()
+    # # Delete old ellipses
+    # for patch in list(ax.patches):
+    #     if isinstance(patch, Ellipse):
+    #         patch.remove()
 
-    # Create new ellipses
-    for i in componentIndices:
-        ellipse = covarianceEllipse(positions[i], covariances[i])
-        ax.add_patch(ellipse)
+    # # Create new ellipses
+    # for i in componentIndices:
+    #     ellipse = covarianceEllipse(positions[i], covariances[i])
+    #     ax.add_patch(ellipse)
 
     # Update the sensor fov shape
     fovPatch.set_xy(fovShape(agent, heading))
 
-    # Update the observed grid by decaying the values and then increase the score of the currently observed grid cells
-    observedGrid *= observedDecayRate
+    # # Update the observed grid by decaying the values and then increase the score of the currently observed grid cells
+    # observedGrid *= observedDecayRate
 
-    for i in range(gridSizeX):
-        for j in range(gridSizeY):
-            gridCell = np.array([(i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY])
+    # for i in range(gridSizeX):
+    #     for j in range(gridSizeY):
+    #         gridCell = np.array([(i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY])
 
-            if observed(gridCell, agent, heading):
-                observedGrid[i, j] = min(observedGrid[i, j] + 1.0, maxObservedScore)
+    #         if observed(gridCell, agent, heading):
+    #             observedGrid[i, j] = min(observedGrid[i, j] + 1.0, maxObservedScore)
 
-    # Redefine the heatmap based on the current observed grid
-    heatMap.set_array(observedGrid.T)
+    # # Redefine the heatmap based on the current observed grid
+    # heatMap.set_array(observedGrid.T)
+
+    positions = components[:,:2]
+    covariances = components[:,2:6].reshape(numComponents, 2, 2)
+    weights = components[:,6]
+
+    # Normalize weights just in case they do not sum to 1
+    weightSum = np.sum(weights)
+    if weightSum > 0:
+        weights = weights / weightSum
+
+    # Compute Gaussian mixture density heatmap
+    _, _, gaussianDensityGrid = gaussianMixtureHeatmap(positions, covariances, weights, maxX, maxY, gridSizeX, gridSizeY)
+
+    # Update heatmap
+    heatMap.set_array(gaussianDensityGrid)
+
+    # Optional: update color scale dynamically
+    # heatMap.set_clim(vmin=0, vmax=np.max(gaussianDensityGrid) + 1e-12)
 
     # Dynamically update the plot title
     ax.set_title(f"Particle Filter Estimate at Frame {frameIndex}")
 
-    return (componentsPlot, agentPlot, targetPlot, estimatePlot, fovPatch, heatMap)
+    # Save a png of the figure every 50 iterations
+    if frameIndex % 50 == 0:
+        filename = os.path.join(outputDirectory, f"gm_frame_{frameIndex}.png")
+        plt.savefig(filename, dpi=150)
+
+    return (agentPlot, targetPlot, estimatePlot, fovPatch, heatMap)
+    # return (componentsPlot, agentPlot, targetPlot, estimatePlot, fovPatch, heatMap)
 
 # Draws a covariance ellipse for a gaussian mixture component
 def covarianceEllipse(mean, cov):
@@ -207,8 +301,7 @@ def covarianceEllipse(mean, cov):
     # Width = major axis diameter, height = minor axis diameter
     width, height = 2 * np.sqrt(eigValues)
 
-    return Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, linewidth=1, alpha=0.6
-    )
+    return Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, linewidth=1, alpha=0.6)
 
 # Create animation
 animation = FuncAnimation(fig, updateFrame, frames=len(data), interval=5, repeat=False)

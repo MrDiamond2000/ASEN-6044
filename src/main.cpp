@@ -25,6 +25,17 @@
 
 int main(){
 
+    int NUM_SIMULATIONS = 1; // number of Monte Carlo simulations
+
+    double pfTimeTotal = 0.0;
+    double gmTimeTotal = 0.0;
+
+    double pfIterTotal = 0.0;
+    double gmIterTotal = 0.0;
+
+    int pfSuccess = 0;
+    int gmSuccess = 0;
+
     // Create environment and collision checkers
     path_planning::Environment2D env;
     env.deserialize("input/problem.yaml");
@@ -40,9 +51,9 @@ int main(){
     YAML::Node gmConfig = YAML::LoadFile("src/GM/GaussianMixtureParams.yaml");
 
     // Define shared parameters
-    double vehicleInitialX = pfConfig["vehicle"]["vehicleInitialX"].as<double>();
-    double vehicleInitialY = pfConfig["vehicle"]["vehicleInitialY"].as<double>();
-    double vehicleInitialHeading = pfConfig["vehicle"]["vehicleInitialHeading"].as<double>();
+    double agentInitialX = pfConfig["agent"]["agentInitialX"].as<double>();
+    double agentInitialY = pfConfig["agent"]["agentInitialY"].as<double>();
+    double agentInitialHeading = pfConfig["agent"]["agentInitialHeading"].as<double>();
 
     double fovFractionOfPi = pfConfig["sensor"]["fovFractionOfPi"].as<double>();
     double range = pfConfig["sensor"]["range"].as<double>();
@@ -50,6 +61,10 @@ int main(){
 
     double fov = M_PI/fovFractionOfPi;
     double fovCosine = cos(fov/2.0);
+
+    for (int trial = 1; trial < NUM_SIMULATIONS+1; trial++) {
+
+    std::cout << "\n-------- TRIAL " << trial << " --------\n";
 
     // Generate target trajectory in advance
     LOG("Generating shared target trajectory...");
@@ -80,8 +95,8 @@ int main(){
     pf.setObservedDecayRate(pfConfig["Filter"]["observedDecayRate"].as<double>());
     pf.initializeParticles(collision_checker); // ignore target
 
-    Eigen::Vector2d pfVehicle(vehicleInitialX, vehicleInitialY);
-    double pfHeading = vehicleInitialHeading;
+    Eigen::Vector2d pfAgent(agentInitialX, agentInitialY);
+    double pfHeading = agentInitialHeading;
 
     // Initialize path planner
     MyRRT pfRRT(pfConfig["pathPlanner"]["bias"].as<double>(), pfConfig["pathPlanner"]["iteration"].as<double>(), pfConfig["pathPlanner"]["stepSize"].as<double>());
@@ -103,12 +118,12 @@ int main(){
         Eigen::Vector2d estimate = pf.estimate();
         auto density = pf.estimate_density(collision_checker);
 
-        // Calculate the vehicle heading
+        // Calculate the agent heading
         Eigen::Vector2d direction;
         if(pfPath.valid && pfPathCounter+2 < pfPath.waypoints.size()) {
-            direction = pfPath.waypoints[pfPathCounter+2] - pfVehicle;
+            direction = pfPath.waypoints[pfPathCounter+2] - pfAgent;
         } else {
-            direction = estimate - pfVehicle;
+            direction = estimate - pfAgent;
         }
 
         if(direction.norm() > 1e-6) {
@@ -118,8 +133,8 @@ int main(){
 
         Eigen::Vector2d headingVec(cos(pfHeading), sin(pfHeading));
 
-        // Output the vehicle, estimate, and target positions to the csv file
-        pfFile << pfVehicle(0) << "," << pfVehicle(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1) << "," << density.second(0) << "," << density.second(1);
+        // Output the agent, estimate, and target positions to the csv file
+        pfFile << pfAgent(0) << "," << pfAgent(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1) << "," << density.second(0) << "," << density.second(1);
 
         // Output the particle positions to the csv file
         for(auto& p : pf.particles) {
@@ -129,13 +144,13 @@ int main(){
 
         // Run the particle filter and record runtime
         auto time1 = std::chrono::high_resolution_clock::now();
-        pf.step(collision_checker, lineOfSightChecker, pfVehicle, headingVec, fovCosine, range, pfConfig["Filter"]["stepSize"].as<double>(), pfConfig["Filter"]["resampleThreshold"].as<double>());
+        pf.step(collision_checker, lineOfSightChecker, pfAgent, headingVec, fovCosine, range, pfConfig["Filter"]["stepSize"].as<double>(), pfConfig["Filter"]["resampleThreshold"].as<double>());
         auto time2 = std::chrono::high_resolution_clock::now();
 
         pfTime += std::chrono::duration<double>(time2 - time1).count();
 
         // Check if the target has been detected
-        if(pfFinalIteration == -1 && pf.detectTarget(currTarget, pfVehicle, headingVec, lineOfSightChecker, fovCosine, range)) {
+        if(pfFinalIteration == -1 && pf.detectTarget(currTarget, pfAgent, headingVec, lineOfSightChecker, fovCosine, range)) {
             LOG("[PF] FOUND at iteration " << i);
             pfFinalIteration = i;
             break;
@@ -156,7 +171,7 @@ int main(){
             }
 
             // Plan the path
-            pfPath = pfRRT.plan(pfVehicle, goal);
+            pfPath = pfRRT.plan(pfAgent, goal);
             if(!pfPath.valid) {
                 LOG("[PF] No path found");
                 break;
@@ -169,10 +184,20 @@ int main(){
         }
 
         // Move one step along the path
-        pfVehicle = pfPath.waypoints[pfPathCounter+1];
+        pfAgent = pfPath.waypoints[pfPathCounter+1];
     }
 
     pfFile.close();
+
+    if (pfFinalIteration != -1) {
+        pfIterTotal += pfFinalIteration;
+        pfSuccess++;
+    } 
+    else {
+        pfIterTotal += maxIterations;
+    }
+
+    pfTimeTotal += pfTime;
 
     // Run the gaussian mixture filter
     LOG("RUNNING GAUSSIAN MIXTURE FILTER");
@@ -186,8 +211,8 @@ int main(){
     gm.setObservedDecayRate(gmConfig["Filter"]["observedDecayRate"].as<double>());
     gm.initializeObjects(collision_checker);
 
-    Eigen::Vector2d gmVehicle(vehicleInitialX, vehicleInitialY);
-    double gmHeading = vehicleInitialHeading;
+    Eigen::Vector2d gmAgent(agentInitialX, agentInitialY);
+    double gmHeading = agentInitialHeading;
 
     // Initialize path planner
     MyRRT gmRRT(gmConfig["pathPlanner"]["bias"].as<double>(), gmConfig["pathPlanner"]["iteration"].as<double>(), gmConfig["pathPlanner"]["stepSize"].as<double>());
@@ -209,12 +234,12 @@ int main(){
         Eigen::Vector2d estimate = gm.estimate(collision_checker);
         // auto density = gm.estimate_density(collision_checker);
 
-        // Calculate the vehicle heading
+        // Calculate the agent heading
         Eigen::Vector2d direction;
         if(gmPath.valid && gmPathCounter+2 < gmPath.waypoints.size()) {
-            direction = gmPath.waypoints[gmPathCounter+2] - gmVehicle;
+            direction = gmPath.waypoints[gmPathCounter+2] - gmAgent;
         } else {
-            direction = estimate - gmVehicle;
+            direction = estimate - gmAgent;
         }
 
         if(direction.norm() > 1e-6){
@@ -224,8 +249,8 @@ int main(){
 
         Eigen::Vector2d headingVec(cos(gmHeading), sin(gmHeading));
 
-        // Output the vehicle, estimate, and target positions to the csv file
-        gmFile << gmVehicle(0) << "," << gmVehicle(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1);
+        // Output the agent, estimate, and target positions to the csv file
+        gmFile << gmAgent(0) << "," << gmAgent(1) << "," << headingVec(0) << "," << headingVec(1) << "," << estimate(0) << "," << estimate(1) << "," << currTarget(0) << "," << currTarget(1);
 
         // Output the component positions, covariances, and weights to the csv file
         for(auto& g : gm.components) {
@@ -237,13 +262,13 @@ int main(){
         Eigen::Matrix2d randWalkCov = 0.1*gmConfig["Filter"]["stepSize"].as<double>()*gmConfig["Filter"]["stepSize"].as<double>()*Eigen::Matrix2d::Identity();
 
         auto time1 = std::chrono::high_resolution_clock::now();
-        gm.step(collision_checker, lineOfSightChecker, gmVehicle, headingVec, fov, fovCosine, range, randWalkCov, gmConfig["Filter"]["stepSize"].as<double>());
+        gm.step(collision_checker, lineOfSightChecker, gmAgent, headingVec, fov, fovCosine, range, randWalkCov);
         auto time2 = std::chrono::high_resolution_clock::now();
 
         gmTime += std::chrono::duration<double>(time2 - time1).count();
 
         // Check if the target has been detected
-        if(gmFinalIteration == -1 && gm.detectTarget(currTarget, gmVehicle, headingVec, lineOfSightChecker, fovCosine, range)) {
+        if(gmFinalIteration == -1 && gm.detectTarget(currTarget, gmAgent, headingVec, lineOfSightChecker, fovCosine, range)) {
             LOG("[GM] FOUND at iteration " << i);
             gmFinalIteration = i;
             break;
@@ -266,7 +291,7 @@ int main(){
             LOG("[GM] Using sampled density estimate | Iteration = " << i);
 
             // Plan the path
-            gmPath = gmRRT.plan(gmVehicle, goal);
+            gmPath = gmRRT.plan(gmAgent, goal);
             if(!gmPath.valid){
                 LOG("[GM] No path found");
                 break;
@@ -279,23 +304,35 @@ int main(){
         }
 
         // Move one step along the path
-        gmVehicle = gmPath.waypoints[gmPathCounter+1];
+        gmAgent = gmPath.waypoints[gmPathCounter+1];
     }
 
     gmFile.close();
 
-    // Print results
-    std::cout << "\nFINAL RESULTS\n";
+    if (gmFinalIteration != -1) {
+        gmIterTotal += gmFinalIteration;
+        gmSuccess++;
+    } 
+    else {
+        gmIterTotal += maxIterations;
+    }
 
-    std::cout << "Particle Filter:\n";
-    std::cout << "Iteration: " << pfFinalIteration << "\n";
-    std::cout << "Time: " << pfTime << " sec\n";
+    gmTimeTotal += gmTime;
+
+    }
+
+    // Print results
+    std::cout << "\nFINAL AVERAGES OVER " << NUM_SIMULATIONS << " TRIALS:\n";
+
+    std::cout << "\nParticle Filter:\n";
+    std::cout << "Average Iterations: " << pfIterTotal / NUM_SIMULATIONS << "\n";
+    std::cout << "Average Runtime: " << pfTimeTotal / NUM_SIMULATIONS << " sec\n";
+    std::cout << "Success Rate: " << (double)pfSuccess / NUM_SIMULATIONS << "\n";
 
     std::cout << "\nGaussian Mixture:\n";
-    std::cout << "Iteration: " << gmFinalIteration << "\n";
-    std::cout << "Time: " << gmTime << " sec\n";
-
-    std::cout << "\nSpeed ratio (GM / PF): " << (gmTime/pfTime) << "\n";
+    std::cout << "Average Iteration: " << gmIterTotal / NUM_SIMULATIONS << "\n";
+    std::cout << "Average Runtime: " << gmTimeTotal / NUM_SIMULATIONS << " sec\n";
+    std::cout << "Success Rate: " << (double)gmSuccess / NUM_SIMULATIONS << "\n";
 
     return 0;
 }
