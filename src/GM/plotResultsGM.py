@@ -63,7 +63,7 @@ componentsPlot, = ax.plot([], [], ".", color="blue", markersize=2, label="Compon
 vehiclePlot, = ax.plot([], [], "o", color="lime", markersize=10, label="Vehicle")
 targetPlot, = ax.plot([], [], "x", color="red", markersize=10, label="Target")
 estimatePlot, = ax.plot([], [], "*", color="lime", markersize=10, label="Estimate")
-densityEstimatePlot, = ax.plot([], [], "s", color="cyan", markersize=10, label="Density Estimate")  
+#densityEstimatePlot, = ax.plot([], [], "s", color="cyan", markersize=10, label="Density Estimate")  
 
 # Plot the field of view path over time
 fovPatch = Polygon([[0,0]], closed=True, color="lime", alpha=0.2, label="Sensor FOV")
@@ -130,8 +130,8 @@ def updateFrame(frameIndex):
     heading = currentPositions[2:4]
     estimate = currentPositions[4:6]
     target = currentPositions[6:8]
-    estimate_density = currentPositions[8:10]
-    remaining = currentPositions[10:]
+    #estimate_density = currentPositions[8:10]
+    remaining = currentPositions[8:]
 
     # If there is not a proper set of components in the csv, skip the frame
     # Should be 2 position fields, 2 covariance values, and a weight value each (divisible by 7)
@@ -150,7 +150,7 @@ def updateFrame(frameIndex):
     vehiclePlot.set_data([vehicle[0]], [vehicle[1]])
     targetPlot.set_data([target[0]], [target[1]])
     estimatePlot.set_data([estimate[0]], [estimate[1]])
-    densityEstimatePlot.set_data([estimate_density[0]], [estimate_density[1]])
+    #densityEstimatePlot.set_data([estimate_density[0]], [estimate_density[1]])
     componentsPlot.set_data(positions[:,0], positions[:,1])
 
     # Define the number of covariance ellipses to plot, at most 5
@@ -165,7 +165,7 @@ def updateFrame(frameIndex):
 
     # Create new ellipses
     for i in componentIndices:
-        ellipse = covariance_ellipse(positions[i], covariances[i])
+        ellipse = covarianceEllipse(positions[i], covariances[i])
         ax.add_patch(ellipse)
 
     # Update the sensor fov shape
@@ -187,10 +187,10 @@ def updateFrame(frameIndex):
     # Dynamically update the plot title
     ax.set_title(f"Particle Filter Estimate at Frame {frameIndex}")
 
-    return (componentsPlot, vehiclePlot, targetPlot, estimatePlot, densityEstimatePlot, fovPatch, heatMap)
+    return (componentsPlot, vehiclePlot, targetPlot, estimatePlot, fovPatch, heatMap)
 
 # Draws a covariance ellipse for a gaussian mixture component
-def covariance_ellipse(mean, cov):
+def covarianceEllipse(mean, cov):
     cov = 0.5 * (cov + cov.T)
 
     eigValues, eigVectors = np.linalg.eigh(cov)
