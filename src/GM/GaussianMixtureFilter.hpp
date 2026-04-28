@@ -312,7 +312,7 @@ class GaussianMixtureFilter {
 
             // Sample from the gaussian mixture
             std::vector<Eigen::Vector2d> samples;
-            samples.reserve(10*M);
+            samples.reserve(M);
 
             std::normal_distribution<double> normal(0.0, 1.0);
 
