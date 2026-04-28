@@ -207,14 +207,7 @@ def covarianceEllipse(mean, cov):
     # Width = major axis diameter, height = minor axis diameter
     width, height = 2 * np.sqrt(eigValues)
 
-    return Ellipse(
-        xy=mean,
-        width=width,
-        height=height,
-        angle=angle,
-        fill=False,
-        linewidth=1,
-        alpha=0.6
+    return Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, linewidth=1, alpha=0.6
     )
 
 # Create animation
