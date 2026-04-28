@@ -293,6 +293,72 @@ class GaussianMixtureFilter {
             return {densityPerArea, bestComponentPosition};
         }
 
+        void choppedGaussian(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
+            // Get the line segment in the form a^T x = b
+            Eigen::Vector2d d = seg.first - seg.second;
+            Eigen::Vector2d a(-d(1), d(0)); // normal vector
+            double b = a.dot(seg.second);
+
+            Eigen::Vector2d mu = g.position;
+
+            if (a.dot(mu) > b) return;
+
+            Eigen::Matrix2d Sigma = g.covariance;
+
+            double m = a.dot(mu);
+            double s2 = a.transpose() * Sigma * a;
+            double s = std::sqrt(s2);
+
+            double alpha = (b - m) / s;
+
+            double cdf_alpha = 0.5 * (1.0 + std::erf(alpha / std::sqrt(2.0)));
+            double pdf_alpha = std::exp(-0.5 * alpha * alpha) / std::sqrt(2.0 * M_PI);
+
+            // Left-side truncation: a^T x <= b
+            double lambda = pdf_alpha / cdf_alpha;
+
+            g.position =
+                mu - lambda * (Sigma * a) / s;
+
+            g.covariance =
+                Sigma - (alpha * lambda + lambda * lambda)
+                * (Sigma * a) * (a.transpose() * Sigma) / s2;
+        }
+
+        void choppedGaussianAndWeight(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
+            // Get the line segment in the form a^T x = b
+            Eigen::Vector2d d = seg.first - seg.second;
+            Eigen::Vector2d a(-d(1), d(0)); // normal vector
+            double b = a.dot(seg.second);
+
+            Eigen::Vector2d mu = g.position;
+
+            if (a.dot(mu) > b) return;
+
+            Eigen::Matrix2d Sigma = g.covariance;
+
+            double m = a.dot(mu);
+            double s2 = a.transpose() * Sigma * a;
+            double s = std::sqrt(s2);
+
+            double alpha = (b - m) / s;
+
+            double cdf_alpha = 0.5 * (1.0 + std::erf(alpha / std::sqrt(2.0)));
+            double pdf_alpha = std::exp(-0.5 * alpha * alpha) / std::sqrt(2.0 * M_PI);
+
+            // Left-side truncation: a^T x <= b
+            double lambda = pdf_alpha / cdf_alpha;
+
+            g.position =
+                mu - lambda * (Sigma * a) / s;
+
+            g.covariance =
+                Sigma - (alpha * lambda + lambda * lambda)
+                * (Sigma * a) * (a.transpose() * Sigma) / s2;
+
+            g.weight *= cdf_alpha; // Adjust weight based on the probability mass that remains after chopping
+        }
+
         // Linear GSF prediction step
         void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker, double stepSize) {
             updatedComponents = components;
@@ -302,84 +368,101 @@ class GaussianMixtureFilter {
                 // update covariance based on random walk
                 updatedComponents[i].covariance += randWalkCov; // Add some process noise
 
-                std::normal_distribution<double> normalDist(0.0, stepSize);
+                // std::normal_distribution<double> normalDist(0.0, stepSize);
 
                 
                 std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(components[i].position, components[i].covariance, 0.95);
                 
                 // If the predicted Gaussian intersects with an obstacle, seperate into two Gaussians and keep the one that is not colliding
                 for (const auto& seg : collision_segments) {
-                    // Get the line segment in the form a^T x = b
-                    Eigen::Vector2d d = seg.second - seg.first;
-                    Eigen::Vector2d a(-d(1), d(0)); // normal vector
-                    double b = a.dot(seg.first);
+                    choppedGaussian(updatedComponents[i], seg);
+                    // // Get the line segment in the form a^T x = b
+                    // Eigen::Vector2d d = seg.second - seg.first;
+                    // Eigen::Vector2d a(-d(1), d(0)); // normal vector
+                    // double b = a.dot(seg.first);
 
-                    // Use the current updated Gaussian, not always the original one
-                    Eigen::Vector2d mu = updatedComponents[i].position;
+                    // // Use the current updated Gaussian, not always the original one
+                    // Eigen::Vector2d mu = updatedComponents[i].position;
 
-                    if (a.dot(mu) > b) continue; // If the mean is on the left side of the line, then we are good and can skip to the next segment
+                    // if (a.dot(mu) > b) continue; // If the mean is on the left side of the line, then we are good and can skip to the next segment
 
-                    Eigen::Matrix2d Sigma = updatedComponents[i].covariance;
+                    // Eigen::Matrix2d Sigma = updatedComponents[i].covariance;
 
-                    // Ensure updated components do not move outside the environment
-                    updatedComponents[i].position(0) = std::clamp(updatedComponents[i].position(0), 0.0, maxX);
-                    updatedComponents[i].position(1) = std::clamp(updatedComponents[i].position(1), 0.0, maxY);
+                    // // // Ensure updated components do not move outside the environment
+                    // // updatedComponents[i].position(0) = std::clamp(updatedComponents[i].position(0), 0.0, maxX);
+                    // // updatedComponents[i].position(1) = std::clamp(updatedComponents[i].position(1), 0.0, maxY);
 
-                    double m = a.dot(mu);
-                    double s2 = a.transpose() * Sigma * a;
-                    double s = std::sqrt(s2);
+                    // double m = a.dot(mu);
+                    // double s2 = a.transpose() * Sigma * a;
+                    // double s = std::sqrt(s2);
 
-                    double alpha = (b - m) / s;
+                    // double alpha = (b - m) / s;
 
-                    double cdf_alpha = 0.5 * (1.0 + std::erf(alpha / std::sqrt(2.0)));
-                    double pdf_alpha = std::exp(-0.5 * alpha * alpha) / std::sqrt(2.0 * M_PI);
+                    // double cdf_alpha = 0.5 * (1.0 + std::erf(alpha / std::sqrt(2.0)));
+                    // double pdf_alpha = std::exp(-0.5 * alpha * alpha) / std::sqrt(2.0 * M_PI);
 
-                    // Left-side truncation: a^T x <= b
-                    double lambda = pdf_alpha / cdf_alpha;
+                    // // Left-side truncation: a^T x <= b
+                    // double lambda = pdf_alpha / cdf_alpha;
 
-                    updatedComponents[i].position =
-                        mu - lambda * (Sigma * a) / s;
+                    // updatedComponents[i].position =
+                    //     mu - lambda * (Sigma * a) / s;
 
-                    updatedComponents[i].covariance =
-                        Sigma - (alpha * lambda + lambda * lambda)
-                        * (Sigma * a) * (a.transpose() * Sigma) / s2;
+                    // updatedComponents[i].covariance =
+                    //     Sigma - (alpha * lambda + lambda * lambda)
+                    //     * (Sigma * a) * (a.transpose() * Sigma) / s2;
                 }
 
-                // Propogate random walk dynamics
-                Eigen::Vector2d newPos;
-                bool valid = false;
+                // // Propogate random walk dynamics
+                // Eigen::Vector2d newPos;
+                // bool valid = false;
 
-                for (int k = 0; k < 20; k++) {
-                    Eigen::Vector2d noise;
-                    noise << normalDist(gen), normalDist(gen);
+                // for (int k = 0; k < 20; k++) {
+                //     Eigen::Vector2d noise;
+                //     noise << normalDist(gen), normalDist(gen);
 
-                    newPos = components[i].position + noise;
+                //     newPos = components[i].position + noise;
 
-                    if (!checker.isCollide(newPos)) {
-                        valid = true;
-                        break;
-                    }
-                }
+                //     if (!checker.isCollide(newPos)) {
+                //         valid = true;
+                //         break;
+                //     }
+                // }
 
-                // Check that new component positions are valid
-                if (valid) {
-                    updatedComponents[i].position = newPos;
-                } else {
-                    // Keep old position as a fallback
-                    updatedComponents[i].position = components[i].position;
-                }
+                // // Check that new component positions are valid
+                // if (valid) {
+                //     updatedComponents[i].position = newPos;
+                // } else {
+                //     // Keep old position as a fallback
+                //     updatedComponents[i].position = components[i].position;
+                // }
 
             }
+
+
 
             components = updatedComponents;
 
         }
 
         // Linear GSF measurement step
-        void measurementStep(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, BaseCollisionChecker<Eigen::VectorXd>& checker, double fovCosine, double range) {
+        void measurementStep(const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, Point2DCollisionChecker& checker, double fov, double range) {
+            Eigen::Vector2d leftFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) + fov/2.0));
+            Eigen::Vector2d rightFOVPoint = observerPosition + range*Eigen::Vector2d(std::cos(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0), std::sin(std::atan2(observerHeading(1), observerHeading(0)) - fov/2.0));
+            std::vector<Eigen::Vector2d> fovVertices = {observerPosition, rightFOVPoint, leftFOVPoint};
 
+            path_planning::Environment2D env = checker.getEnvironment();
+            env.obstacles.clear();
+            path_planning::Obstacle2D fovPolygon(fovVertices);
+            env.obstacles.push_back(fovPolygon);
+
+            Point2DCollisionChecker temp_checker(env); // Create a temporary collision checker with the FOV polygon as an obstacle to check whether components are in the FOV, without modifying the original collision checker which is needed for other checks in the filter. Could be optimized by just adding and removing the FOV polygon from the original checker each step, but this is simpler to implement and debug for now. Just make sure not to use the original checker for any checks that need to consider the FOV as an obstacle during the measurement step, and use
             for (auto& g : components) {
-                g.weight *= likelihood(g, observerPosition, observerHeading, checker, fovCosine, range);
+                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(g.position, g.covariance, 0.95);
+                for (const auto& seg : collision_segments) {
+                    choppedGaussianAndWeight(g, seg);
+                }
+
+                // g.weight *= likelihood(g, observerPosition, observerHeading, checker, fovCosine, range);
             }
         }
 
@@ -541,13 +624,13 @@ class GaussianMixtureFilter {
         }
 
         // Performs a Linear Gaussian Sum Filter step
-        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov, double stepSize) {
+        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fov, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov, double stepSize) {
 
             // Prediction step 
             predictionStep(randWalkCov, checker, stepSize);
 
             // Measurement step
-            measurementStep(observerPosition, observerHeading, lineOfSightChecker, fovCosine, range);
+            measurementStep(observerPosition, observerHeading, checker, fov, range);
 
             // Update spatial memory
             updateObservedGrid(observerPosition, observerHeading, lineOfSightChecker, fovCosine, range);

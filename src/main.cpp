@@ -237,7 +237,7 @@ int main(){
         Eigen::Matrix2d randWalkCov = 0.1*gmConfig["Filter"]["stepSize"].as<double>()*gmConfig["Filter"]["stepSize"].as<double>()*Eigen::Matrix2d::Identity();
 
         auto time1 = std::chrono::high_resolution_clock::now();
-        gm.step(collision_checker, lineOfSightChecker, gmVehicle, headingVec, fovCosine, range, randWalkCov, gmConfig["Filter"]["stepSize"].as<double>());
+        gm.step(collision_checker, lineOfSightChecker, gmVehicle, headingVec, fov, fovCosine, range, randWalkCov, gmConfig["Filter"]["stepSize"].as<double>());
         auto time2 = std::chrono::high_resolution_clock::now();
 
         gmTime += std::chrono::duration<double>(time2 - time1).count();

@@ -39,6 +39,8 @@ class Point2DCollisionChecker : public BaseCollisionChecker<Eigen::VectorXd>{
 
         bool thisObstacle(int ob_idx_, const Eigen::VectorXd& point_);
 
+        path_planning::Environment2D getEnvironment() const {return env;}
+
     private:
         const path_planning::Environment2D& env;
 };

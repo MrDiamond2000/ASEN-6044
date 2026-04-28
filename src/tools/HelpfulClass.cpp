@@ -70,6 +70,28 @@ std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker:
         }
     }
 
+    std::vector<Eigen::Vector2d> temp_bounds = {Eigen::Vector2d(env.x_min, env.y_min), Eigen::Vector2d(env.x_min, env.y_max), Eigen::Vector2d(env.x_max, env.y_max), Eigen::Vector2d(env.x_max, env.y_min), Eigen::Vector2d(env.x_min, env.y_min)};
+
+    for (size_t idx = 0; idx < 4; ++idx) {
+        const Eigen::VectorXd& v1 = temp_bounds[idx];
+        const Eigen::VectorXd& v2 = temp_bounds[idx+1];
+
+        // transform the line segment to the ellipse's coordinate frame
+        Eigen::Matrix2d rotation;
+        rotation << cos(-angle), -sin(-angle),
+                    sin(-angle), cos(-angle);
+        Eigen::Vector2d transformed_v1 = rotation * (v1 - center);
+        Eigen::Vector2d transformed_v2 = rotation * (v2 - center);
+
+        // create a line for y = mx + c form
+        double m = (transformed_v2(1) - transformed_v1(1)) / (transformed_v2(0) - transformed_v1(0));
+        double c = transformed_v1(1) - m * transformed_v1(0);
+
+        if (c*c < eigenvalues(1) + m*m*eigenvalues(0)) {
+            collision_segments.push_back({v1, v2});
+        }
+    }
+
     return collision_segments;
 }
 
