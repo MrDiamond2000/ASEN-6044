@@ -61,6 +61,11 @@ class GaussianMixtureFilter {
             Eigen::Matrix2d covariance = Eigen::Matrix2d::Identity()*0.1; // Not totally sure what a good initial covariance is
             components.push_back({position, covariance, weight});
         }
+        
+        // void addComponent(Eigen::Vector2d& position, double weight, Eigen::Matrix2d covariance) {
+        //     Eigen::Matrix2d covariance = Eigen::Matrix2d::Identity()*0.1; // Not totally sure what a good initial covariance is
+        //     components.push_back({position, covariance, weight});
+        // }
 
         // Setters
         void setMaxPropogationAttempts(double val) {
@@ -325,7 +330,7 @@ class GaussianMixtureFilter {
                 * (Sigma * a) * (a.transpose() * Sigma) / s2;
         }
 
-        void choppedGaussianAndWeight(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
+        GaussianObject choppedGaussianAndWeight(GaussianObject& g, std::pair<Eigen::Vector2d,Eigen::Vector2d> seg) {
             // Get the line segment in the form a^T x = b
             Eigen::Vector2d d = seg.second - seg.first;
             Eigen::Vector2d a(-d(1), d(0)); // normal vector
@@ -333,7 +338,7 @@ class GaussianMixtureFilter {
 
             Eigen::Vector2d mu = g.position;
 
-            if (a.dot(mu) > b) return;
+            // if (a.dot(mu) > b) return;
 
             Eigen::Matrix2d Sigma = g.covariance;
 
@@ -349,14 +354,25 @@ class GaussianMixtureFilter {
             // Left-side truncation: a^T x <= b
             double lambda = pdf_alpha / cdf_alpha;
 
-            g.position =
+            GaussianObject newGaussian;
+
+            newGaussian.position =
                 mu - lambda * (Sigma * a) / s;
 
-            g.covariance =
+            // g.position =
+            //     mu - lambda * (Sigma * a) / s;
+
+            newGaussian.covariance =
                 Sigma - (alpha * lambda + lambda * lambda)
                 * (Sigma * a) * (a.transpose() * Sigma) / s2;
+            // g.covariance =
+            //     Sigma - (alpha * lambda + lambda * lambda)
+            //     * (Sigma * a) * (a.transpose() * Sigma) / s2;
 
-            g.weight *= cdf_alpha; // Adjust weight based on the probability mass that remains after chopping
+            newGaussian.weight = g.weight * cdf_alpha;
+            // g.weight *= cdf_alpha; // Adjust weight based on the probability mass that remains after chopping
+
+            return newGaussian;
         }
 
         // Linear GSF prediction step
@@ -371,7 +387,7 @@ class GaussianMixtureFilter {
                 // std::normal_distribution<double> normalDist(0.0, stepSize);
 
                 
-                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(components[i].position, components[i].covariance, 0.8);
+                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(components[i].position, components[i].covariance, 0.8, true);
                 
                 // If the predicted Gaussian intersects with an obstacle, seperate into two Gaussians and keep the one that is not colliding
                 for (const auto& seg : collision_segments) {
@@ -457,9 +473,18 @@ class GaussianMixtureFilter {
 
             Point2DCollisionChecker temp_checker(env); // Create a temporary collision checker with the FOV polygon as an obstacle to check whether components are in the FOV, without modifying the original collision checker which is needed for other checks in the filter. Could be optimized by just adding and removing the FOV polygon from the original checker each step, but this is simpler to implement and debug for now. Just make sure not to use the original checker for any checks that need to consider the FOV as an obstacle during the measurement step, and use
             for (auto& g : components) {
-                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = checker.isCollideEllipse(g.position, g.covariance, 0.95);
+                std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments = temp_checker.isCollideEllipse(g.position, g.covariance, 0.6, false);
+                std::vector<GaussianObject> newGaussians;
                 for (const auto& seg : collision_segments) {
-                    choppedGaussianAndWeight(g, seg);
+                    newGaussians.push_back(choppedGaussianAndWeight(g, seg));
+                }
+
+                // assign g with the new gaussians with highest weight
+                if (!newGaussians.empty()) {
+                    auto maxIt = std::max_element(newGaussians.begin(), newGaussians.end(), [](const GaussianObject& a, const GaussianObject& b) {
+                        return a.weight < b.weight;
+                    });
+                    g = *maxIt;
                 }
 
                 // g.weight *= likelihood(g, observerPosition, observerHeading, checker, fovCosine, range);

@@ -35,7 +35,7 @@ class Point2DCollisionChecker : public BaseCollisionChecker<Eigen::VectorXd>{
 
         bool isCollide(const Eigen::VectorXd& point_) override;
         bool isCollide2P(const Eigen::VectorXd& point1_, const Eigen::VectorXd& point2_) override;
-        std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence) const;
+        std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence, bool with_bound) const;
 
         bool thisObstacle(int ob_idx_, const Eigen::VectorXd& point_);
 

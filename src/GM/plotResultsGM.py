@@ -155,7 +155,8 @@ def updateFrame(frameIndex):
 
     # Define the number of covariance ellipses to plot, at most 5
     numEllipses = min(5, len(weights))
-    componentIndices = np.argsort(weights)[-numEllipses:]
+    # componentIndices = np.argsort(weights)[-numEllipses:]
+    componentIndices = [6,7,8,9,10]
 
     # Delete old ellipses
     for patch in list(ax.patches):
@@ -190,18 +191,31 @@ def updateFrame(frameIndex):
 
 # Draws a covariance ellipse for a gaussian mixture component
 def covariance_ellipse(mean, cov):
-    # Symmetrize
-    cov = 0.5*(cov + cov.T)
+    cov = 0.5 * (cov + cov.T)
 
-    # Clamp eigenvalues in case there are NaNs or anything
     eigValues, eigVectors = np.linalg.eigh(cov)
     eigValues = np.clip(eigValues, 1e-6, 1e3)
 
-    # Width and height correspond to one standard deviation from the mean
-    angle = np.degrees(np.arctan2(eigVectors[1,1], eigVectors[0,1]))
-    width, height = 2*np.sqrt(eigValues)
+    # Sort from largest to smallest
+    order = np.argsort(eigValues)[::-1]
+    eigValues = eigValues[order]
+    eigVectors = eigVectors[:, order]
 
-    return Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, linewidth=1, alpha=0.6)
+    # Angle of the major axis
+    angle = np.degrees(np.arctan2(eigVectors[1, 0], eigVectors[0, 0]))
+
+    # Width = major axis diameter, height = minor axis diameter
+    width, height = 2 * np.sqrt(eigValues)
+
+    return Ellipse(
+        xy=mean,
+        width=width,
+        height=height,
+        angle=angle,
+        fill=False,
+        linewidth=1,
+        alpha=0.6
+    )
 
 # Create animation
 animation = FuncAnimation(fig, updateFrame, frames=len(data), interval=5, repeat=False)

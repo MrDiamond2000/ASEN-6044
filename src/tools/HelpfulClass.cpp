@@ -35,7 +35,7 @@ bool Point2DCollisionChecker::isCollide2P(const Eigen::VectorXd& point1_, const 
     return false;
 }
 
-std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker::isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence) const {
+std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker::isCollideEllipse(const Eigen::Vector2d& center, const Eigen::Matrix2d& covariance, double confidence, bool with_bound) const {
     std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> collision_segments;
 
     double s = -2 * log(1 - confidence);
@@ -112,6 +112,10 @@ std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker:
         }
     }
 
+    if (!with_bound) {
+        return collision_segments;
+    }
+
     std::vector<Eigen::Vector2d> temp_bounds = {Eigen::Vector2d(env.x_min, env.y_min), Eigen::Vector2d(env.x_min, env.y_max), Eigen::Vector2d(env.x_max, env.y_max), Eigen::Vector2d(env.x_max, env.y_min), Eigen::Vector2d(env.x_min, env.y_min)};
 
     for (size_t idx = 0; idx < 4; ++idx) {
@@ -122,14 +126,44 @@ std::vector<std::pair<Eigen::Vector2d,Eigen::Vector2d>> Point2DCollisionChecker:
         Eigen::Matrix2d rotation;
         rotation << cos(-angle), -sin(-angle),
                     sin(-angle), cos(-angle);
-        Eigen::Vector2d transformed_v1 = rotation * (v1 - center);
-        Eigen::Vector2d transformed_v2 = rotation * (v2 - center);
 
-        // create a line for y = mx + c form
-        double m = (transformed_v2(1) - transformed_v1(1)) / (transformed_v2(0) - transformed_v1(0));
-        double c = transformed_v1(1) - m * transformed_v1(0);
+        // Transform segment endpoints into ellipse frame
+        Eigen::Vector2d p1 = rotation * (v1 - center);
+        Eigen::Vector2d p2 = rotation * (v2 - center);
 
-        if (c*c < eigenvalues(1) + m*m*eigenvalues(0)) {
+        Eigen::Vector2d d = p2 - p1;
+
+        double a2 = eigenvalues(0);
+        double b2 = eigenvalues(1);
+
+        // Degenerate segment: v1 == v2
+        if (d.squaredNorm() < 1e-12) {
+            double value = p1(0) * p1(0) / a2 + p1(1) * p1(1) / b2;
+            if (value <= 1.0) {
+                collision_segments.push_back({v1, v2});
+            }
+        }
+
+        // Quadratic coefficients for:
+        // ((p1_x + t d_x)^2 / a2) + ((p1_y + t d_y)^2 / b2) = 1
+        double A = d(0) * d(0) / a2 + d(1) * d(1) / b2;
+        double B = 2.0 * (p1(0) * d(0) / a2 + p1(1) * d(1) / b2);
+        double C = p1(0) * p1(0) / a2 + p1(1) * p1(1) / b2 - 1.0;
+
+        double discriminant = B * B - 4.0 * A * C;
+
+        if (discriminant < 0.0) {
+            // No intersection with the infinite line
+            continue;
+        }
+
+        double sqrt_disc = std::sqrt(discriminant);
+
+        double t1 = (-B - sqrt_disc) / (2.0 * A);
+        double t2 = (-B + sqrt_disc) / (2.0 * A);
+
+        // Collision if either intersection point lies on the segment
+        if ((t1 >= 0.0 && t1 <= 1.0) || (t2 >= 0.0 && t2 <= 1.0)) {
             collision_segments.push_back({v1, v2});
         }
     }
