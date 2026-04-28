@@ -312,7 +312,7 @@ class GaussianMixtureFilter {
 
             // Sample from the gaussian mixture
             std::vector<Eigen::Vector2d> samples;
-            samples.reserve(M);
+            samples.reserve(10*M);
 
             std::normal_distribution<double> normal(0.0, 1.0);
 
@@ -355,17 +355,17 @@ class GaussianMixtureFilter {
             const int radius = 3;
 
             // Count circular cells
-            int cellCount = 0;
-            for (int di = -radius; di <= radius; di++) {
-                for (int dj = -radius; dj <= radius; dj++) {
-                    if (di*di + dj*dj <= radius*radius) {
-                        cellCount++;
-                    }
-                }
-            }
+            // int cellCount = 0;
+            // for (int di = -radius; di <= radius; di++) {
+            //     for (int dj = -radius; dj <= radius; dj++) {
+            //         if (di*di + dj*dj <= radius*radius) {
+            //             cellCount++;
+            //         }
+            //     }
+            // }
 
-            double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
-            double area = cellCount * cellArea;
+            //double cellArea = (maxX/gridSizeX)*(maxY/gridSizeY);
+            //double area = cellCount * cellArea;
 
             // Circular density smoothing based on grid cells within the defined radius
             for (int i = 0; i < gridSizeX; i++) {
@@ -410,7 +410,7 @@ class GaussianMixtureFilter {
             }
 
             // Smooth the density estimate so it doesn't move locations as quickly
-            const double alpha = 0.2;
+            const double alpha = 0.05;
 
             if (!hasSmoothedEstimate) {
                 smoothedEstimate = highestDensityPosition;
@@ -501,7 +501,7 @@ class GaussianMixtureFilter {
         }
 
         // Linear GSF prediction step
-        void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker, double stepSize) {
+        void predictionStep(const Eigen::Matrix2d& randWalkCov, Point2DCollisionChecker& checker) {
             updatedComponents = components;
             
             for (size_t i = 0; i < components.size(); i++) {
@@ -818,10 +818,10 @@ class GaussianMixtureFilter {
         }
 
         // Performs a Linear Gaussian Sum Filter step
-        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fov, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov, double stepSize) {
+        void step(Point2DCollisionChecker& checker, BaseCollisionChecker<Eigen::VectorXd>& lineOfSightChecker, const Eigen::Vector2d& observerPosition, const Eigen::Vector2d& observerHeading, double fov, double fovCosine, double range, const Eigen::Matrix2d& randWalkCov) {
 
             // Prediction step 
-            predictionStep(randWalkCov, checker, stepSize);
+            predictionStep(randWalkCov, checker);
 
             // Measurement step
             measurementStep(observerPosition, observerHeading, checker, fov, range);

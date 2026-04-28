@@ -19,10 +19,10 @@ Filter:
   densityThreshold: 0.026
   densityThresholdReset: 0.026
 
-vehicle:
-  vehicleInitialX: 1.0
-  vehicleInitialY: 1.0
-  vehicleInitialHeading: 0.0
+agent:
+  agentInitialX: 1.0
+  agentInitialY: 1.0
+  agentInitialHeading: 0.0
 
 sensor:
   fovFractionOfPi: 3.0

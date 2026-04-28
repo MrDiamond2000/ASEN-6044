@@ -4,6 +4,17 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Polygon
 import yaml
 from matplotlib.patches import Ellipse
+import os
+import glob
+
+outputDirectory = "frames"
+
+# Create directory if necessary
+os.makedirs(outputDirectory, exist_ok=True)
+
+# Delete existing images
+for file in glob.glob(os.path.join(outputDirectory, "gm*.png")):
+    os.remove(file)
 
 # Define parameters from yaml file
 with open("src/GM/GaussianMixtureParams.yaml", "r") as file:
@@ -70,9 +81,9 @@ for obstacle in obstacles:
     shape = Polygon(obstacle, closed=True, facecolor="gray", edgecolor="black", alpha=1)
     ax.add_patch(shape)
 
-# Plot the components, vehicle, target, and filter estimate over time
+# Plot the components, agent, target, and filter estimate over time
 # componentsPlot, = ax.plot([], [], ".", color="blue", markersize=2, label="Components")
-vehiclePlot, = ax.plot([], [], "o", color="lime", markersize=10, label="Vehicle")
+agentPlot, = ax.plot([], [], "o", color="lime", markersize=10, label="Agent")
 targetPlot, = ax.plot([], [], "x", color="red", markersize=10, label="Target")
 estimatePlot, = ax.plot([], [], "*", color="lime", markersize=10, label="Estimate")
 #densityEstimatePlot, = ax.plot([], [], "s", color="cyan", markersize=10, label="Density Estimate")  
@@ -140,31 +151,31 @@ def counterClockwise(p1, p2, p3):
 def segmentsIntersect(p1, p2, p3, p4):
     return (counterClockwise(p1, p3, p4) != counterClockwise(p2, p3, p4)) and (counterClockwise(p1, p2, p3) != counterClockwise(p1, p2, p4))
 
-# Check whether the vehicle can observe the provided grid cell location (if there is an obstacle in the way)
-def lineOfSight(vehicle, target):
+# Check whether the agent can observe the provided grid cell location (if there is an obstacle in the way)
+def lineOfSight(agent, target):
     for obstacle in obstacles:
         for i in range(len(obstacle)):
             obstacleVertex1 = obstacle[i]
             obstacleVertex2 = obstacle[(i+1)%len(obstacle)]
-            if segmentsIntersect(vehicle, target, obstacleVertex1, obstacleVertex2):
+            if segmentsIntersect(agent, target, obstacleVertex1, obstacleVertex2):
                 return False
     return True
 
 # Calculate the fov shape of the sensor
-def fovShape(vehicle, heading):
+def fovShape(agent, heading):
     headingAngle = np.arctan2(heading[1], heading[0])
     fovVertexAngles = np.linspace(headingAngle - fov/2, headingAngle + fov/2, 50)
 
-    fovShapeVertices = [vehicle]
+    fovShapeVertices = [agent]
     for angle in fovVertexAngles:
-        fovShapeVertices.append([vehicle[0] + sensorRange*np.cos(angle), vehicle[1] + sensorRange*np.sin(angle)])
+        fovShapeVertices.append([agent[0] + sensorRange*np.cos(angle), agent[1] + sensorRange*np.sin(angle)])
 
     return np.array(fovShapeVertices)
 
 # Check if a grid cell is observed
-def observed(cellPosition, vehicle, heading):
-    dx = cellPosition[0] - vehicle[0]
-    dy = cellPosition[1] - vehicle[1]
+def observed(cellPosition, agent, heading):
+    dx = cellPosition[0] - agent[0]
+    dy = cellPosition[1] - agent[1]
 
     distanceSquared = dx*dx + dy*dy
     if distanceSquared > sensorRange**2: return False
@@ -174,7 +185,7 @@ def observed(cellPosition, vehicle, heading):
     if dot <= np.sqrt(distanceSquared)*np.cos(fov/2.0):
         return False
 
-    if not lineOfSight(vehicle, cellPosition):
+    if not lineOfSight(agent, cellPosition):
         return False
 
     return True
@@ -185,7 +196,7 @@ def updateFrame(frameIndex):
 
     # Get the positions of all objects of interest from the current row of the csv file
     currentPositions = data[frameIndex]
-    vehicle = currentPositions[0:2]
+    agent = currentPositions[0:2]
     heading = currentPositions[2:4]
     estimate = currentPositions[4:6]
     target = currentPositions[6:8]
@@ -205,8 +216,8 @@ def updateFrame(frameIndex):
     covariances = components[:,2:6].reshape(numComponents, 2, 2)
     weights = components[:,6]
 
-    # Update the plots with the current vehicle, estimate, target, and component positions
-    vehiclePlot.set_data([vehicle[0]], [vehicle[1]])
+    # Update the plots with the current agent, estimate, target, and component positions
+    agentPlot.set_data([agent[0]], [agent[1]])
     targetPlot.set_data([target[0]], [target[1]])
     estimatePlot.set_data([estimate[0]], [estimate[1]])
     #densityEstimatePlot.set_data([estimate_density[0]], [estimate_density[1]])
@@ -228,7 +239,7 @@ def updateFrame(frameIndex):
     #     ax.add_patch(ellipse)
 
     # Update the sensor fov shape
-    fovPatch.set_xy(fovShape(vehicle, heading))
+    fovPatch.set_xy(fovShape(agent, heading))
 
     # # Update the observed grid by decaying the values and then increase the score of the currently observed grid cells
     # observedGrid *= observedDecayRate
@@ -237,7 +248,7 @@ def updateFrame(frameIndex):
     #     for j in range(gridSizeY):
     #         gridCell = np.array([(i + 0.5)*maxX/gridSizeX, (j + 0.5)*maxY/gridSizeY])
 
-    #         if observed(gridCell, vehicle, heading):
+    #         if observed(gridCell, agent, heading):
     #             observedGrid[i, j] = min(observedGrid[i, j] + 1.0, maxObservedScore)
 
     # # Redefine the heatmap based on the current observed grid
@@ -253,15 +264,7 @@ def updateFrame(frameIndex):
         weights = weights / weightSum
 
     # Compute Gaussian mixture density heatmap
-    _, _, gaussianDensityGrid = gaussianMixtureHeatmap(
-        positions,
-        covariances,
-        weights,
-        maxX,
-        maxY,
-        gridSizeX,
-        gridSizeY
-    )
+    _, _, gaussianDensityGrid = gaussianMixtureHeatmap(positions, covariances, weights, maxX, maxY, gridSizeX, gridSizeY)
 
     # Update heatmap
     heatMap.set_array(gaussianDensityGrid)
@@ -272,8 +275,13 @@ def updateFrame(frameIndex):
     # Dynamically update the plot title
     ax.set_title(f"Particle Filter Estimate at Frame {frameIndex}")
 
-    return (vehiclePlot, targetPlot, estimatePlot, fovPatch, heatMap)
-    # return (componentsPlot, vehiclePlot, targetPlot, estimatePlot, fovPatch, heatMap)
+    # Save a png of the figure every 50 iterations
+    if frameIndex % 50 == 0:
+        filename = os.path.join(outputDirectory, f"gm_frame_{frameIndex}.png")
+        plt.savefig(filename, dpi=150)
+
+    return (agentPlot, targetPlot, estimatePlot, fovPatch, heatMap)
+    # return (componentsPlot, agentPlot, targetPlot, estimatePlot, fovPatch, heatMap)
 
 # Draws a covariance ellipse for a gaussian mixture component
 def covarianceEllipse(mean, cov):
@@ -293,15 +301,7 @@ def covarianceEllipse(mean, cov):
     # Width = major axis diameter, height = minor axis diameter
     width, height = 2 * np.sqrt(eigValues)
 
-    return Ellipse(
-        xy=mean,
-        width=width,
-        height=height,
-        angle=angle,
-        fill=False,
-        linewidth=1,
-        alpha=0.6
-    )
+    return Ellipse(xy=mean, width=width, height=height, angle=angle, fill=False, linewidth=1, alpha=0.6)
 
 # Create animation
 animation = FuncAnimation(fig, updateFrame, frames=len(data), interval=5, repeat=False)
