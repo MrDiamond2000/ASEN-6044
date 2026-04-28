@@ -68,7 +68,7 @@ class ParticleFilter {
         }
 
         // Check whether the particle (or target) is observed in a defined cone infront of the observer
-        bool observed(Eigen::Vector2d position, Eigen::Vector2d observerPosition, Eigen::Vector2d observerHeading, double fovCosine, double range) {
+        bool observed(const Eigen::Vector2d position, const Eigen::Vector2d observerPosition, const Eigen::Vector2d observerHeading, double fovCosine, double range) {
 
             double dx = position(0) - observerPosition(0);
             double dy = position(1) - observerPosition(1);
@@ -265,7 +265,6 @@ class ParticleFilter {
         }
 
         std::pair<double, Eigen::Vector2d> estimate_density(Point2DCollisionChecker& checker) {
-            const int radius = 10;
 
             // Reset grids
             for (int i = 0; i < gridSizeX; i++) {
@@ -380,4 +379,5 @@ class ParticleFilter {
         std::uniform_real_distribution<double> distY;
         std::vector<std::vector<double>> densityGrid;
         std::vector<std::vector<double>> surroundingDensityGrid;
+        const int radius = 3;
 };

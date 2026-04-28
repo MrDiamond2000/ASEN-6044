@@ -7,7 +7,7 @@ pathPlanner:
   iteration: 10000
   stepSize: 0.2
 
-particleFilter:
+Filter:
   Ns: 1000
   stepSize: 0.15
   resampleThreshold: 0.75
@@ -16,7 +16,7 @@ particleFilter:
   maxPropogationAttempts: 20
   maxObservedScore: 10
   observedDecayRate: 0.995
-  densityThreshold: 0.018
+  densityThreshold: 0.03
   densityThresholdReset: 0.016
 
 vehicle:
@@ -30,4 +30,4 @@ sensor:
 
 misc:
   maxIterations: 2000
-  outputFile: "log.csv"
+  outputFile: "output_pf.csv"
