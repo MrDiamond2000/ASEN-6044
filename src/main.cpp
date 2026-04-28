@@ -263,7 +263,7 @@ int main(){
             //     LOG("[GM] Using weighting and exploration estimate | Density = " << density.first);
             // }
 
-            LOG("[GM] Using weighting and exploration estimate");
+            LOG("[GM] Using sampled density estimate | Iteration = " << i);
 
             // Plan the path
             gmPath = gmRRT.plan(gmVehicle, goal);
