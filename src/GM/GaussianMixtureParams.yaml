@@ -8,7 +8,7 @@ pathPlanner:
   stepSize: 0.2
 
 Filter:
-  M: 1000
+  M: 200
   stepSize: 0.15
   resampleThreshold: 0.75
   gridSizeX: 50
